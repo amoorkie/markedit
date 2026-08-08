@@ -1,0 +1,72 @@
+{
+  "name": "markedit-windows",
+  "version": "1.33.1-win.3",
+  "description": "Unofficial Windows host for the MarkEdit CoreEditor",
+  "main": "main.js",
+  "author": "MarkEdit contributors",
+  "license": "MIT",
+  "scripts": {
+    "prepare-editor": "node scripts/prepare-editor.mjs",
+    "test:windows": "node --test tests/*.test.mjs",
+    "test:electron": "electron scripts/electron-smoke.cjs",
+    "start": "electron .",
+    "dist": "npm run prepare-editor && electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "43.3.0",
+    "electron-builder": "26.0.12",
+    "esbuild": "0.28.1",
+    "dompurify": "3.4.13",
+    "lucide": "1.30.0",
+    "marked": "18.0.9"
+  },
+  "build": {
+    "appId": "com.markedit.windows",
+    "productName": "MarkEdit",
+    "artifactName": "MarkEdit-Windows-${version}-Setup.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "editor.html",
+      "reader.js",
+      "reader.css",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../LICENSE",
+        "to": "LICENSE.txt"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MarkEdit"
+    },
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown", "mdown", "mkd"],
+        "name": "Markdown document",
+        "description": "Markdown document",
+        "role": "Editor"
+      }
+    ]
+  }
+}

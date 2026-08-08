@@ -1,76 +1,74 @@
-<picture>
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/MarkEdit-app/MarkEdit/main/Icon.png" width="96">
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/MarkEdit-app/MarkEdit/main/Icon-dark.png" width="96">
-  <img src="./Icon.png" width="96">
-</picture>
+# MarkEdit for Windows
 
-# MarkEdit
+Минималистичное приложение для чтения и редактирования Markdown-файлов в Windows. Эта сборка основана на открытом проекте [MarkEdit](https://github.com/MarkEdit-app/MarkEdit) и добавляет отдельную Windows-версию на Electron.
 
-[![](https://img.shields.io/badge/Platform-macOS_15.0+-blue?color=007bff)](https://github.com/MarkEdit-app/MarkEdit?tab=readme-ov-file#installation) [![](https://github.com/MarkEdit-app/MarkEdit/actions/workflows/build-and-test.yml/badge.svg?branch=main)](https://github.com/MarkEdit-app/MarkEdit/actions/workflows/build-and-test.yml)
+## Скачать
 
-MarkEdit is a free and **open-source** Markdown editor, for macOS. It's just like _TextEdit_ on Mac but dedicated to `Markdown`.
+[Скачать MarkEdit для Windows (x64)](https://github.com/amoorkie/markedit/releases/latest/download/MarkEdit-Windows-1.33.1-win.3-Setup.exe)
 
-No bloat. Markdown editing done right in a 4 MB app that flies through million-line files.
+Текущая версия: `1.33.1-win.3`.
 
-We do not claim to be the best in any single dimension. Instead, we aim to strike the right balance across **size**, **speed**, **native integration**, and **correctness**.
+Установщик пока не подписан цифровой подписью. Если Windows SmartScreen покажет предупреждение, выберите **Подробнее**, затем **Выполнить в любом случае**.
 
-_For perspective: at just 4 MB, MarkEdit is much smaller than Electron apps. Handling a 10 MB file with ease puts it ahead of TextKit-based editors. Performance-first editors built with Rust lack native features, while correctness alone rules out editors that rely on regex-based Markdown parsing._
+## Возможности
 
-> [!TIP]
-> Discover our other free and open-source apps at [libremac.github.io](https://libremac.github.io/).
->
-> Follow our Mastodon account [@MarkEditApp](https://mastodon.social/@MarkEditApp) for the latest updates.
+- режим чтения включается по умолчанию и не позволяет случайно изменить документ;
+- переключение в режим редактирования кнопкой с карандашом;
+- сохранение и возврат к чтению кнопкой с галочкой;
+- копирование смыслового блока Markdown по заголовку `#`, `##`, `###` и ниже;
+- настройка темы, шрифта, ширины текста и оформления;
+- скрываемый файловый сайдбар для перехода между Markdown-файлами в папке;
+- регистрация MarkEdit как приложения для `.md`, `.markdown`, `.mdown` и `.mkd`.
 
-## Preview
+## Установка
 
-![Screenshots 01](/Screenshots/01.png)
+1. Скачайте установщик по ссылке выше.
+2. Запустите `MarkEdit-Windows-1.33.1-win.3-Setup.exe`.
+3. Выберите папку установки и завершите установку.
+4. При необходимости назначьте MarkEdit приложением по умолчанию для `.md` в параметрах Windows.
 
-![Screenshots 02](/Screenshots/02.png)
+## Сборка из исходников
 
-![Screenshots 03](/Screenshots/03.png)
+Нужны Node.js 20 или новее и npm.
 
-![Screenshots 04](/Screenshots/04.png)
+```powershell
+git clone https://github.com/amoorkie/markedit.git
+cd markedit
+corepack yarn --cwd CoreEditor install --immutable
+corepack yarn --cwd CoreEditor build
+cd Windows
+npm ci
+npm run test:windows
+npm run dist
+```
 
-## What makes MarkEdit different
+Готовый установщик появится в `Windows/dist`.
 
-- Privacy-focused: doesn't collect any user data
-- Native: clean and intuitive, feels right at home on Mac
-- Fast: edits 10 MB files easily
-- Lightweight: installer size is about 4 MB
-- Extensible: seamless integration with Shortcuts and AppleScript
+Для запуска в режиме разработки:
 
-MarkEdit strictly follows the [GFM specification](https://github.github.com/gfm/), with no proprietary syntax or invented features. Complex editing like multi-caret and code folding is built on [CodeMirror 6](https://codemirror.net/) for correctness and performance, consistently faster than most macOS editors. UI controls remain native to macOS in both aesthetics and behavior, including force-touch word lookup, inline predictions, and Writing Tools.
+```powershell
+cd Windows
+npm ci
+npm start
+```
 
-Customization is built around CSS, JavaScript, and [CodeMirror extensions](https://github.com/MarkEdit-app/MarkEdit-api). Official extensions include [MarkEdit-preview](https://markedit-app.github.io/extensions/#markedit-preview) for a preview pane, [MarkEdit-theming](https://github.com/MarkEdit-app/MarkEdit-theming) for custom themes, and [MarkEdit-ai-writer](https://markedit-app.github.io/extensions/#markedit-ai-writer) for Apple Intelligence on macOS Tahoe or later.
+## Структура проекта
 
-<img src="./Screenshots/extensions.png" width="800" alt="MarkEdit Extensions">
+- `Windows/` - Windows-приложение, интерфейс чтения, проводник и настройки;
+- `CoreEditor/` - Markdown-редактор на базе CodeMirror;
+- `MarkEditMac/`, `MarkEditCore/`, `MarkEditKit/` - исходный код macOS-версии;
+- `LICENSE` - лицензия MIT.
 
-> To learn more, refer to [Philosophy](https://github.com/MarkEdit-app/MarkEdit/wiki/Philosophy), [Why MarkEdit](https://github.com/MarkEdit-app/MarkEdit/wiki/Why-MarkEdit) and [MarkEdit Extensions](https://markedit-app.github.io/extensions/).
+## Проверка сборки
 
-## Installation
+Windows-часть содержит модульные тесты модели Markdown-секций и smoke-тест Electron:
 
-Get `MarkEdit.dmg` from the <a href="https://github.com/MarkEdit-app/MarkEdit/releases/latest" target="_blank">latest release</a>, open it, and drag `MarkEdit.app` to `Applications`. Or install via [Homebrew](https://brew.sh/): `brew install --cask markedit`.
+```powershell
+cd Windows
+npm run test:windows
+npm run test:electron
+```
 
-<img src="./Screenshots/install.png" width="540" alt="Install MarkEdit">
+## Происхождение и лицензия
 
-MarkEdit checks for updates automatically; you can also browse version history [here](https://github.com/MarkEdit-app/MarkEdit/releases).
-
-For older macOS: [macos-12](https://github.com/MarkEdit-app/MarkEdit/releases/tag/macos-12), [macos-13](https://github.com/MarkEdit-app/MarkEdit/releases/tag/macos-13), [macos-14](https://github.com/MarkEdit-app/MarkEdit/releases/tag/macos-14).
-
-## Using MarkEdit
-
-Please refer to the [wiki page](https://github.com/MarkEdit-app/MarkEdit/wiki/Manual) for details. Check out [MarkEdit-skill](https://github.com/MarkEdit-app/MarkEdit-skill) if you're interested in managing MarkEdit with an AI agent.
-
-## Why MarkEdit is free
-
-MarkEdit is a tool we use every day and keep improving for ourselves. We ship it openly, hoping it's useful to others with the same needs.
-
-## Contributing to MarkEdit
-
-For bugs, [open an issue](https://github.com/MarkEdit-app/MarkEdit/issues/new) or [pull request](https://github.com/MarkEdit-app/MarkEdit/compare). For behavior changes, discuss first; MarkEdit is intentionally minimal ([why](https://github.com/MarkEdit-app/MarkEdit/wiki/Why-MarkEdit#feature-poor)).
-
-Please refer to the [wiki page](https://github.com/MarkEdit-app/MarkEdit/wiki/Development) for development instructions.
-
-## Acknowledgments
-
-Built on [CodeMirror 6](https://codemirror.net/), with [ts-gyb](https://github.com/microsoft/ts-gyb) for code generation.
+Проект основан на [MarkEdit-app/MarkEdit](https://github.com/MarkEdit-app/MarkEdit). Исходный проект и эта модификация распространяются по лицензии MIT. MarkEdit for Windows является неофициальной Windows-сборкой.

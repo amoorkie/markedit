@@ -1,0 +1,8 @@
+/node_modules/
+/dist/
+/editor.html
+/reader.js
+/reader.css
+smoke-*.log
+tests/artifacts/
+.dev-user-data*/
