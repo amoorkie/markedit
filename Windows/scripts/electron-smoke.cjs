@@ -21,6 +21,8 @@ ipcMain.handle('workspace:children', (_event, directory) => ({
     : [],
 }));
 ipcMain.handle('workspace:select-root', () => false);
+ipcMain.handle('workspace:create-folder', () => false);
+ipcMain.handle('workspace:delete-entry', () => false);
 ipcMain.handle('workspace:create-file', () => false);
 ipcMain.handle('workspace:open', () => true);
 
@@ -112,6 +114,8 @@ app.whenReady().then(async () => {
       title: document.getElementById('workspace-title').textContent,
       files: document.querySelectorAll('.workspace-row').length,
       folderPicker: Boolean(document.getElementById('workspace-select-folder')),
+      newFolder: Boolean(document.getElementById('workspace-new-folder')),
+      deleteButtons: document.querySelectorAll('.workspace-delete').length,
       selectChevron: document.querySelector('.select-control svg')?.classList.contains('lucide-chevron-down'),
     })`);
     assert.deepEqual(workspaceState, {
@@ -122,6 +126,8 @@ app.whenReady().then(async () => {
       title: 'Notes',
       files: 2,
       folderPicker: true,
+      newFolder: true,
+      deleteButtons: 2,
       selectChevron: true,
     });
 

@@ -9,6 +9,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  FolderPlus,
   Monitor,
   Moon,
   Pencil,
@@ -17,6 +18,7 @@ import {
   PanelLeftClose,
   Settings,
   Sun,
+  Trash2,
   X,
 } from 'lucide';
 import { createSectionTree, sectionSource } from './section-model.mjs';
@@ -38,6 +40,7 @@ const ICONS = {
   FileText,
   Folder,
   FolderOpen,
+  FolderPlus,
   Monitor,
   Moon,
   PanelLeft,
@@ -46,6 +49,7 @@ const ICONS = {
   Plus,
   Settings,
   Sun,
+  Trash2,
   X,
 };
 const FONT_FAMILIES = {
@@ -116,6 +120,9 @@ function createInterface() {
         <div class="workspace-actions">
           <button class="icon-button icon-button-small" id="workspace-select-folder" type="button" title="Выбрать папку" aria-label="Выбрать папку">
             ${icon('folder-open', 17)}
+          </button>
+          <button class="icon-button icon-button-small" id="workspace-new-folder" type="button" title="Новая папка" aria-label="Создать папку">
+            ${icon('folder-plus', 17)}
           </button>
           <button class="icon-button icon-button-small" id="workspace-new-file" type="button" title="Новый Markdown-файл" aria-label="Создать Markdown-файл">
             ${icon('plus', 17)}
@@ -226,6 +233,7 @@ function bindInterface() {
       button.disabled = false;
     }
   });
+  document.getElementById('workspace-new-folder').addEventListener('click', () => showNewFolderInput());
   bindCreateFileButton(document.getElementById('workspace-new-file'));
   bindCreateFileButton(document.getElementById('new-file-button'));
   document.getElementById('workspace-close').addEventListener('click', () => setWorkspaceOpen(false));
@@ -352,6 +360,55 @@ function workspaceName(directory) {
   return directory.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || directory;
 }
 
+function showNewFolderInput() {
+  if (workspaceTree.querySelector('.workspace-new-folder-row')) return;
+  const row = document.createElement('div');
+  row.className = 'workspace-new-folder-row';
+  row.innerHTML = `${icon('folder', 15)}<input type="text" aria-label="Имя новой папки" placeholder="Новая папка" maxlength="120">`;
+  workspaceTree.prepend(row);
+  createIcons({ icons: ICONS });
+  const input = row.querySelector('input');
+  const finish = async create => {
+    const name = input.value.trim();
+    if (create && name) {
+      input.disabled = true;
+      try {
+        if (await window.windowsHost.createWorkspaceFolder(name)) await refreshWorkspace();
+      } finally {
+        if (row.isConnected) input.disabled = false;
+      }
+      return;
+    }
+    row.remove();
+  };
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') finish(true);
+    if (event.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(false));
+  input.focus();
+}
+
+function addDeleteAction(item, entry) {
+  item.classList.add('workspace-item');
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'workspace-delete';
+  button.title = `Удалить ${entry.name}`;
+  button.setAttribute('aria-label', `Удалить ${entry.name}`);
+  button.innerHTML = icon('trash-2', 14);
+  button.addEventListener('click', async event => {
+    event.stopPropagation();
+    button.disabled = true;
+    try {
+      if (await window.windowsHost.deleteWorkspaceEntry(entry.path)) await refreshWorkspace();
+    } finally {
+      button.disabled = false;
+    }
+  });
+  item.append(button);
+}
+
 async function renderWorkspaceEntry(entry, currentFile, depth) {
   const item = document.createElement('li');
   const row = document.createElement('button');
@@ -365,6 +422,7 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
     row.title = entry.path;
     row.classList.toggle('active', entry.path.toLowerCase() === currentFile?.toLowerCase());
     row.addEventListener('click', () => window.windowsHost.openWorkspaceFile(entry.path));
+    addDeleteAction(item, entry);
     return item;
   }
 
@@ -407,6 +465,7 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
   };
 
   row.addEventListener('click', () => setExpanded(!expanded));
+  addDeleteAction(item, entry);
   updateRow();
   if (entry.expanded) await setExpanded(true);
   return item;

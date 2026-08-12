@@ -167,6 +167,58 @@ async function selectWorkspaceRoot() {
   return workspaceSnapshot();
 }
 
+function isInsideWorkspace(target) {
+  if (!workspaceRoot || typeof target !== 'string' || !path.isAbsolute(target)) return false;
+  const relative = path.relative(workspaceRoot, path.resolve(target));
+  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+async function createWorkspaceFolder(name) {
+  const folderName = typeof name === 'string' ? name.trim() : '';
+  if (!folderName || folderName === '.' || folderName === '..' || /[<>:"/\\|?*]/.test(folderName)) {
+    dialog.showErrorBox('Не удалось создать папку', 'В имени папки есть недопустимые символы.');
+    return false;
+  }
+  const target = path.join(workspaceRoot || app.getPath('documents'), folderName);
+  if (!isInsideWorkspace(target)) throw new TypeError('Недопустимый путь папки');
+  try {
+    await fs.mkdir(target);
+    return workspaceSnapshot();
+  } catch (error) {
+    dialog.showErrorBox('Не удалось создать папку', error.code === 'EEXIST' ? 'Папка с таким именем уже существует.' : error.message);
+    return false;
+  }
+}
+
+async function deleteWorkspaceEntry(target) {
+  if (!isInsideWorkspace(target)) throw new TypeError('Недопустимый путь');
+  const resolvedTarget = path.resolve(target);
+  if (currentFile) {
+    const relativeFile = path.relative(resolvedTarget, currentFile);
+    if (relativeFile === '' || (!relativeFile.startsWith(`..${path.sep}`) && relativeFile !== '..' && !path.isAbsolute(relativeFile))) {
+      dialog.showErrorBox('Нельзя удалить', 'Сначала откройте другой документ или создайте новый.');
+      return false;
+    }
+  }
+  const answer = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    buttons: ['В корзину', 'Отмена'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Удаление',
+    message: `Переместить «${path.basename(resolvedTarget)}» в корзину?`,
+    detail: 'Объект можно будет восстановить из корзины Windows.',
+  });
+  if (answer.response !== 0) return false;
+  try {
+    await shell.trashItem(resolvedTarget);
+    return workspaceSnapshot();
+  } catch (error) {
+    dialog.showErrorBox('Не удалось удалить', error.message);
+    return false;
+  }
+}
+
 async function createWorkspaceFile() {
   if (!await confirmDiscard()) return false;
 
@@ -336,6 +388,8 @@ ipcMain.handle('clipboard:write', (_event, text) => {
 ipcMain.handle('document:save', () => saveDocument());
 ipcMain.handle('workspace:snapshot', () => workspaceSnapshot());
 ipcMain.handle('workspace:select-root', () => selectWorkspaceRoot());
+ipcMain.handle('workspace:create-folder', (_event, name) => createWorkspaceFolder(name));
+ipcMain.handle('workspace:delete-entry', (_event, target) => deleteWorkspaceEntry(target));
 ipcMain.handle('workspace:children', (_event, directory) => readWorkspaceDirectory(directory));
 ipcMain.handle('workspace:create-file', () => createWorkspaceFile());
 ipcMain.handle('workspace:open', async (_event, filePath) => {
