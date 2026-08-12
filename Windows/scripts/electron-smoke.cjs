@@ -5,6 +5,7 @@ const { app, BrowserWindow, clipboard, ipcMain } = require('electron');
 
 const projectDirectory = path.resolve(__dirname, '..');
 let openedWorkspaceFile;
+const moveRequests = [];
 
 ipcMain.handle('clipboard:write', (_event, text) => clipboard.writeText(text));
 ipcMain.handle('document:save', () => true);
@@ -33,7 +34,10 @@ ipcMain.handle('workspace:select-root', () => false);
 ipcMain.handle('workspace:select-drive', () => false);
 ipcMain.handle('workspace:create-folder', () => false);
 ipcMain.handle('workspace:delete-entry', () => false);
-ipcMain.handle('workspace:move-entry', () => false);
+ipcMain.handle('workspace:move-entry', (_event, source, destination) => {
+  moveRequests.push({ source, destination });
+  return false;
+});
 ipcMain.handle('workspace:choose-move-destination', () => false);
 ipcMain.handle('workspace:remove-recent', () => false);
 ipcMain.handle('workspace:create-file', () => false);
@@ -216,6 +220,34 @@ app.whenReady().then(async () => {
       selected: document.querySelectorAll('#workspace-tree .workspace-row.selected').length,
     })`);
     assert.deepEqual(preservedTreeState, { expanded: 'true', rows: 3, selected: 1 });
+
+    await window.webContents.executeJavaScript(`(() => {
+      const row = [...document.querySelectorAll('#workspace-tree .workspace-row')]
+        .find(element => element.title === 'C:\\\\Archive\\\\old.md');
+      const dataTransfer = new DataTransfer();
+      dataTransfer.setData('text/plain', 'C:\\\\Archive\\\\old.md');
+      row.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }));
+      document.querySelector('.workspace-drive-control')
+        .dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer }));
+      document.querySelector('.workspace-drive-control')
+        .dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+    })()`);
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.deepEqual(moveRequests.at(-1), { source: 'C:\\Archive\\old.md', destination: 'C:\\' });
+
+    await window.webContents.executeJavaScript(`(() => {
+      const fileRow = [...document.querySelectorAll('#workspace-tree .workspace-row')]
+        .find(element => element.title === 'C:\\\\reader-demo.md');
+      const folderRow = [...document.querySelectorAll('#workspace-tree .workspace-row')]
+        .find(element => element.title === 'C:\\\\Archive');
+      const dataTransfer = new DataTransfer();
+      dataTransfer.setData('text/plain', 'C:\\\\reader-demo.md');
+      fileRow.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }));
+      folderRow.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer }));
+      folderRow.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+    })()`);
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.deepEqual(moveRequests.at(-1), { source: 'C:\\reader-demo.md', destination: 'C:\\Archive' });
 
     console.log('Electron reader smoke test passed');
     window.destroy();

@@ -249,6 +249,9 @@ function bindInterface() {
     syncRecentFilesAccordion();
   });
   document.getElementById('workspace-drive-toggle').addEventListener('click', () => setDriveMenuOpen(!driveMenuOpen));
+  const driveControl = document.querySelector('.workspace-drive-control');
+  bindWorkspaceDropTarget(driveControl, () => renderedWorkspaceRoot);
+  bindWorkspaceDropTarget(workspaceTree, () => renderedWorkspaceRoot, { backgroundOnly: true });
   document.getElementById('workspace-new-folder').addEventListener('click', () => showNewFolderInput());
   bindCreateFileButton(document.getElementById('workspace-new-file'));
   bindCreateFileButton(document.getElementById('new-file-button'));
@@ -281,6 +284,34 @@ function bindInterface() {
   document.getElementById('width-control').addEventListener('input', event => updateSetting('contentWidth', Number(event.target.value)));
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (settings.scheme === 'system') applySettings();
+  });
+}
+
+function bindWorkspaceDropTarget(element, destinationPath, { backgroundOnly = false } = {}) {
+  element.addEventListener('dragover', event => {
+    if (!draggedWorkspacePath || (backgroundOnly && event.target.closest('.workspace-row'))) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    element.classList.add('drop-target');
+  });
+  element.addEventListener('dragleave', event => {
+    if (!element.contains(event.relatedTarget)) element.classList.remove('drop-target');
+  });
+  element.addEventListener('drop', async event => {
+    if (backgroundOnly && event.target.closest('.workspace-row')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    element.classList.remove('drop-target');
+    const source = draggedWorkspacePath || event.dataTransfer.getData('text/plain');
+    draggedWorkspacePath = undefined;
+    const destination = destinationPath();
+    if (!source || !destination) return;
+    element.classList.add('loading');
+    try {
+      if (await window.windowsHost.moveWorkspaceEntry(source, destination)) await refreshWorkspace();
+    } finally {
+      element.classList.remove('loading');
+    }
   });
 }
 
@@ -605,6 +636,7 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
     draggedWorkspacePath = undefined;
     row.classList.remove('dragging');
     document.querySelectorAll('.workspace-row.drop-target').forEach(target => target.classList.remove('drop-target'));
+    document.querySelectorAll('.workspace-drive-control.drop-target, .workspace-tree.drop-target').forEach(target => target.classList.remove('drop-target'));
   });
   item.append(row);
 
