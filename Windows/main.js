@@ -66,8 +66,35 @@ async function confirmDiscard() {
 async function newDocument() {
   if (!await confirmDiscard()) return;
   currentFile = undefined;
-  workspaceRoot = app.getPath('documents');
   await resetEditor('');
+}
+
+function workspaceStatePath() {
+  return path.join(app.getPath('userData'), 'workspace.json');
+}
+
+async function rememberWorkspaceRoot() {
+  if (!workspaceRoot) return;
+  await fs.mkdir(app.getPath('userData'), { recursive: true });
+  await fs.writeFile(workspaceStatePath(), JSON.stringify({ root: workspaceRoot }), 'utf8');
+}
+
+async function setWorkspaceRoot(directory) {
+  workspaceRoot = path.resolve(directory);
+  await rememberWorkspaceRoot();
+}
+
+async function loadWorkspaceRoot() {
+  try {
+    const saved = JSON.parse(await fs.readFile(workspaceStatePath(), 'utf8'));
+    if (typeof saved.root === 'string' && path.isAbsolute(saved.root)) {
+      await fs.access(saved.root);
+      return path.resolve(saved.root);
+    }
+  } catch {
+    // Fall back to Documents when no saved folder is available.
+  }
+  return app.getPath('documents');
 }
 
 async function openDocument(filePath) {
@@ -84,7 +111,7 @@ async function openDocument(filePath) {
   try {
     const text = await fs.readFile(filePath, 'utf8');
     currentFile = path.resolve(filePath);
-    workspaceRoot = path.dirname(currentFile);
+    await setWorkspaceRoot(path.dirname(currentFile));
     await resetEditor(text);
     app.addRecentDocument(currentFile);
   } catch (error) {
@@ -106,7 +133,7 @@ async function saveDocument(saveAs = false) {
   try {
     await fs.writeFile(target, await editorText(), 'utf8');
     currentFile = path.resolve(target);
-    workspaceRoot = path.dirname(currentFile);
+    await setWorkspaceRoot(path.dirname(currentFile));
     dirty = false;
     app.addRecentDocument(currentFile);
     updateTitle();
@@ -119,31 +146,25 @@ async function saveDocument(saveAs = false) {
 }
 
 async function workspaceSnapshot() {
-  const currentDirectory = currentFile ? path.dirname(currentFile) : null;
-  const quickAccessCandidates = [
-    currentDirectory && { name: `Текущая папка — ${path.basename(currentDirectory)}`, path: currentDirectory },
-    { name: 'Рабочий стол', path: app.getPath('desktop') },
-    { name: 'Документы', path: app.getPath('documents') },
-    { name: 'Загрузки', path: app.getPath('downloads') },
-  ].filter(Boolean);
-  const seen = new Set();
-  const quickAccess = quickAccessCandidates.filter(entry => {
-    const key = path.resolve(entry.path).toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).map(entry => ({
-    ...entry,
-    type: 'directory',
-    expanded: path.resolve(entry.path) === path.resolve(currentDirectory || ''),
-  }));
-
+  if (!workspaceRoot) workspaceRoot = await loadWorkspaceRoot();
+  const contents = await readWorkspaceDirectory(workspaceRoot);
   return {
+    root: workspaceRoot,
     currentFile,
-    currentDirectory,
-    quickAccess,
-    drives: await availableDrives(),
+    ...contents,
   };
+}
+
+async function selectWorkspaceRoot() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Выбрать папку',
+    defaultPath: workspaceRoot || app.getPath('documents'),
+    buttonLabel: 'Выбрать папку',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (result.canceled || !result.filePaths[0]) return false;
+  await setWorkspaceRoot(result.filePaths[0]);
+  return workspaceSnapshot();
 }
 
 async function createWorkspaceFile() {
@@ -163,7 +184,7 @@ async function createWorkspaceFile() {
   try {
     await fs.writeFile(target, '', 'utf8');
     currentFile = path.resolve(target);
-    workspaceRoot = path.dirname(currentFile);
+    await setWorkspaceRoot(path.dirname(currentFile));
     await resetEditor('');
     app.addRecentDocument(currentFile);
     return true;
@@ -171,19 +192,6 @@ async function createWorkspaceFile() {
     dialog.showErrorBox('Не удалось создать файл', error.message);
     return false;
   }
-}
-
-async function availableDrives() {
-  const letters = Array.from({ length: 24 }, (_, index) => `${String.fromCharCode(67 + index)}:\\`);
-  const drives = await Promise.all(letters.map(async drivePath => {
-    try {
-      await fs.access(drivePath);
-      return { type: 'directory', name: `Локальный диск (${drivePath.slice(0, 2)})`, path: drivePath, drive: true };
-    } catch {
-      return null;
-    }
-  }));
-  return drives.filter(Boolean);
 }
 
 async function readWorkspaceDirectory(directory) {
@@ -267,7 +275,7 @@ function buildMenu() {
 }
 
 async function createWindow(initialFile) {
-  workspaceRoot = app.getPath('documents');
+  workspaceRoot = await loadWorkspaceRoot();
   mainWindow = new BrowserWindow({
     width: 1040,
     height: 760,
@@ -327,6 +335,7 @@ ipcMain.handle('clipboard:write', (_event, text) => {
 
 ipcMain.handle('document:save', () => saveDocument());
 ipcMain.handle('workspace:snapshot', () => workspaceSnapshot());
+ipcMain.handle('workspace:select-root', () => selectWorkspaceRoot());
 ipcMain.handle('workspace:children', (_event, directory) => readWorkspaceDirectory(directory));
 ipcMain.handle('workspace:create-file', () => createWorkspaceFile());
 ipcMain.handle('workspace:open', async (_event, filePath) => {

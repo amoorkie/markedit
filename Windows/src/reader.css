@@ -470,22 +470,6 @@ body {
   padding: 8px 6px 24px;
 }
 
-.workspace-section + .workspace-section {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--reader-border);
-}
-
-.workspace-section-title {
-  margin: 0;
-  padding: 0 10px 6px;
-  color: var(--reader-muted);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .workspace-list {
   margin: 0;
   padding: 0;

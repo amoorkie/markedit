@@ -8,20 +8,19 @@ const projectDirectory = path.resolve(__dirname, '..');
 ipcMain.handle('clipboard:write', (_event, text) => clipboard.writeText(text));
 ipcMain.handle('document:save', () => true);
 ipcMain.handle('workspace:snapshot', () => ({
+  root: 'C:\\Notes',
   currentFile: 'C:\\Notes\\reader-demo.md',
-  currentDirectory: 'C:\\Notes',
-  quickAccess: [
-    { type: 'directory', name: 'Текущая папка — Notes', path: 'C:\\Notes', expanded: true },
-    { type: 'directory', name: 'Документы', path: 'C:\\Users\\Test\\Documents' },
-  ],
-  drives: [{ type: 'directory', name: 'Локальный диск (C:)', path: 'C:\\', drive: true }],
-}));
-ipcMain.handle('workspace:children', (_event, directory) => ({
-  entries: directory === 'C:\\Notes' ? [
+  entries: [
     { type: 'directory', name: 'Archive', path: 'C:\\Notes\\Archive' },
     { type: 'file', name: 'reader-demo.md', path: 'C:\\Notes\\reader-demo.md' },
-  ] : [],
+  ],
 }));
+ipcMain.handle('workspace:children', (_event, directory) => ({
+  entries: directory === 'C:\\Notes\\Archive'
+    ? [{ type: 'file', name: 'old.md', path: 'C:\\Notes\\Archive\\old.md' }]
+    : [],
+}));
+ipcMain.handle('workspace:select-root', () => false);
 ipcMain.handle('workspace:create-file', () => false);
 ipcMain.handle('workspace:open', () => true);
 
@@ -112,8 +111,7 @@ app.whenReady().then(async () => {
       toggleDisplay: getComputedStyle(document.getElementById('workspace-button')).display,
       title: document.getElementById('workspace-title').textContent,
       files: document.querySelectorAll('.workspace-row').length,
-      sections: [...document.querySelectorAll('.workspace-section-title')].map(element => element.textContent),
-      drives: document.querySelectorAll('.workspace-row svg.lucide-hard-drive').length,
+      folderPicker: Boolean(document.getElementById('workspace-select-folder')),
       selectChevron: document.querySelector('.select-control svg')?.classList.contains('lucide-chevron-down'),
     })`);
     assert.deepEqual(workspaceState, {
@@ -121,10 +119,9 @@ app.whenReady().then(async () => {
       sidebarHidden: false,
       sidebarDisplay: 'flex',
       toggleDisplay: 'none',
-      title: 'Обзор файлов',
-      files: 5,
-      sections: ['Быстрый доступ', 'Этот компьютер'],
-      drives: 1,
+      title: 'Notes',
+      files: 2,
+      folderPicker: true,
       selectChevron: true,
     });
 

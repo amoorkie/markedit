@@ -9,7 +9,6 @@ import {
   FileText,
   Folder,
   FolderOpen,
-  HardDrive,
   Monitor,
   Moon,
   Pencil,
@@ -39,7 +38,6 @@ const ICONS = {
   FileText,
   Folder,
   FolderOpen,
-  HardDrive,
   Monitor,
   Moon,
   PanelLeft,
@@ -116,6 +114,9 @@ function createInterface() {
           <strong id="workspace-title">Нет папки</strong>
         </div>
         <div class="workspace-actions">
+          <button class="icon-button icon-button-small" id="workspace-select-folder" type="button" title="Выбрать папку" aria-label="Выбрать папку">
+            ${icon('folder-open', 17)}
+          </button>
           <button class="icon-button icon-button-small" id="workspace-new-file" type="button" title="Новый Markdown-файл" aria-label="Создать Markdown-файл">
             ${icon('plus', 17)}
           </button>
@@ -216,6 +217,15 @@ function bindInterface() {
   settingsButton.addEventListener('click', () => setSettingsOpen(settingsPanel.hidden));
   document.getElementById('appearance-close').addEventListener('click', () => setSettingsOpen(false));
   workspaceButton.addEventListener('click', () => setWorkspaceOpen(true));
+  document.getElementById('workspace-select-folder').addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      if (await window.windowsHost.selectWorkspaceRoot()) await refreshWorkspace();
+    } finally {
+      button.disabled = false;
+    }
+  });
   bindCreateFileButton(document.getElementById('workspace-new-file'));
   bindCreateFileButton(document.getElementById('new-file-button'));
   document.getElementById('workspace-close').addEventListener('click', () => setWorkspaceOpen(false));
@@ -319,28 +329,27 @@ async function setMode(nextMode) {
 async function refreshWorkspace() {
   if (!workspaceTree || !window.windowsHost?.getWorkspace) return;
   const snapshot = await window.windowsHost.getWorkspace();
-  workspaceTitle.textContent = 'Обзор файлов';
-  workspaceTitle.title = 'Быстрый доступ и диски этого компьютера';
+  workspaceTitle.textContent = workspaceName(snapshot.root);
+  workspaceTitle.title = snapshot.root;
   workspaceTree.replaceChildren();
-
-  await appendWorkspaceSection('Быстрый доступ', snapshot.quickAccess, snapshot.currentFile);
-  await appendWorkspaceSection('Этот компьютер', snapshot.drives, snapshot.currentFile);
-  createIcons({ icons: ICONS });
-}
-
-async function appendWorkspaceSection(title, entries, currentFile) {
-  const section = document.createElement('section');
-  section.className = 'workspace-section';
-  const heading = document.createElement('h2');
-  heading.className = 'workspace-section-title';
-  heading.textContent = title;
-  section.append(heading);
 
   const list = document.createElement('ul');
   list.className = 'workspace-list';
-  for (const entry of entries) list.append(await renderWorkspaceEntry(entry, currentFile, 0));
-  section.append(list);
-  workspaceTree.append(section);
+  if (snapshot.inaccessible) {
+    list.append(workspaceMessage('Нет доступа к папке', 0));
+  } else if (snapshot.entries.length === 0) {
+    list.append(workspaceMessage('В папке нет Markdown-файлов', 0));
+  } else {
+    for (const entry of snapshot.entries) list.append(await renderWorkspaceEntry(entry, snapshot.currentFile, 0));
+    if (snapshot.truncated) list.append(workspaceMessage('Показаны первые 1000 элементов', 0));
+  }
+  workspaceTree.append(list);
+  createIcons({ icons: ICONS });
+}
+
+function workspaceName(directory) {
+  if (!directory) return 'Нет папки';
+  return directory.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || directory;
 }
 
 async function renderWorkspaceEntry(entry, currentFile, depth) {
@@ -369,7 +378,7 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
   const updateRow = () => {
     children.hidden = !expanded;
     row.setAttribute('aria-expanded', String(expanded));
-    const folderIcon = entry.drive ? 'hard-drive' : expanded ? 'folder-open' : 'folder';
+    const folderIcon = expanded ? 'folder-open' : 'folder';
     row.innerHTML = `${icon(expanded ? 'chevron-down' : 'chevron-right', 14)}${icon(folderIcon, 15)}<span>${escapeText(entry.name)}</span>`;
     row.title = entry.path;
     createIcons({ icons: ICONS });
