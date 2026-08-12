@@ -18,7 +18,6 @@ const markdownFilters = [
   { name: 'All files', extensions: ['*'] },
 ];
 const supportedExtensions = new Set(['.md', '.markdown', '.mdown', '.mkd', '.txt']);
-const ignoredDirectories = new Set(['.git', 'node_modules']);
 
 function fileFromArguments(argv) {
   return argv.find(argument => {
@@ -71,7 +70,7 @@ async function newDocument() {
   await resetEditor('');
 }
 
-async function openDocument(filePath, preserveWorkspace = false) {
+async function openDocument(filePath) {
   if (!filePath) {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
@@ -85,7 +84,7 @@ async function openDocument(filePath, preserveWorkspace = false) {
   try {
     const text = await fs.readFile(filePath, 'utf8');
     currentFile = path.resolve(filePath);
-    if (!preserveWorkspace || !workspaceRoot) workspaceRoot = path.dirname(currentFile);
+    workspaceRoot = path.dirname(currentFile);
     await resetEditor(text);
     app.addRecentDocument(currentFile);
   } catch (error) {
@@ -107,7 +106,7 @@ async function saveDocument(saveAs = false) {
   try {
     await fs.writeFile(target, await editorText(), 'utf8');
     currentFile = path.resolve(target);
-    if (!workspaceRoot) workspaceRoot = path.dirname(currentFile);
+    workspaceRoot = path.dirname(currentFile);
     dirty = false;
     app.addRecentDocument(currentFile);
     updateTitle();
@@ -120,12 +119,30 @@ async function saveDocument(saveAs = false) {
 }
 
 async function workspaceSnapshot() {
-  if (!workspaceRoot) return { root: null, currentFile: null, entries: [] };
-  const budget = { remaining: 500 };
+  const currentDirectory = currentFile ? path.dirname(currentFile) : null;
+  const quickAccessCandidates = [
+    currentDirectory && { name: `Текущая папка — ${path.basename(currentDirectory)}`, path: currentDirectory },
+    { name: 'Рабочий стол', path: app.getPath('desktop') },
+    { name: 'Документы', path: app.getPath('documents') },
+    { name: 'Загрузки', path: app.getPath('downloads') },
+  ].filter(Boolean);
+  const seen = new Set();
+  const quickAccess = quickAccessCandidates.filter(entry => {
+    const key = path.resolve(entry.path).toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map(entry => ({
+    ...entry,
+    type: 'directory',
+    expanded: path.resolve(entry.path) === path.resolve(currentDirectory || ''),
+  }));
+
   return {
-    root: workspaceRoot,
     currentFile,
-    entries: await readWorkspaceDirectory(workspaceRoot, 0, budget),
+    currentDirectory,
+    quickAccess,
+    drives: await availableDrives(),
   };
 }
 
@@ -156,13 +173,28 @@ async function createWorkspaceFile() {
   }
 }
 
-async function readWorkspaceDirectory(directory, depth, budget) {
-  if (depth > 5 || budget.remaining <= 0) return [];
+async function availableDrives() {
+  const letters = Array.from({ length: 24 }, (_, index) => `${String.fromCharCode(67 + index)}:\\`);
+  const drives = await Promise.all(letters.map(async drivePath => {
+    try {
+      await fs.access(drivePath);
+      return { type: 'directory', name: `Локальный диск (${drivePath.slice(0, 2)})`, path: drivePath, drive: true };
+    } catch {
+      return null;
+    }
+  }));
+  return drives.filter(Boolean);
+}
+
+async function readWorkspaceDirectory(directory) {
+  if (typeof directory !== 'string' || !path.isAbsolute(directory)) {
+    throw new TypeError('Invalid directory path');
+  }
   let directoryEntries;
   try {
     directoryEntries = await fs.readdir(directory, { withFileTypes: true });
   } catch {
-    return [];
+    return { entries: [], inaccessible: true };
   }
 
   const entries = [];
@@ -171,30 +203,22 @@ async function readWorkspaceDirectory(directory, depth, budget) {
     return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' });
   });
 
-  for (const entry of sorted) {
-    if (budget.remaining <= 0 || entry.isSymbolicLink()) break;
+  for (const entry of sorted.slice(0, 1000)) {
+    if (entry.isSymbolicLink()) continue;
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name.startsWith('.') || ignoredDirectories.has(entry.name)) continue;
-      const children = await readWorkspaceDirectory(entryPath, depth + 1, budget);
-      if (children.length > 0) {
-        entries.push({ type: 'directory', name: entry.name, path: entryPath, children });
-        budget.remaining -= 1;
-      }
+      entries.push({ type: 'directory', name: entry.name, path: entryPath });
     } else if (entry.isFile() && supportedExtensions.has(path.extname(entry.name).toLowerCase())) {
       entries.push({ type: 'file', name: entry.name, path: entryPath });
-      budget.remaining -= 1;
     }
   }
-  return entries;
+  return { entries, truncated: sorted.length > 1000 };
 }
 
-function isPathInsideWorkspace(filePath) {
-  if (!workspaceRoot) return false;
-  const root = path.resolve(workspaceRoot);
-  const candidate = path.resolve(filePath);
-  return candidate.startsWith(`${root}${path.sep}`)
-    && supportedExtensions.has(path.extname(candidate).toLowerCase());
+function isSupportedFilePath(filePath) {
+  return typeof filePath === 'string'
+    && path.isAbsolute(filePath)
+    && supportedExtensions.has(path.extname(filePath).toLowerCase());
 }
 
 function buildMenu() {
@@ -303,12 +327,13 @@ ipcMain.handle('clipboard:write', (_event, text) => {
 
 ipcMain.handle('document:save', () => saveDocument());
 ipcMain.handle('workspace:snapshot', () => workspaceSnapshot());
+ipcMain.handle('workspace:children', (_event, directory) => readWorkspaceDirectory(directory));
 ipcMain.handle('workspace:create-file', () => createWorkspaceFile());
 ipcMain.handle('workspace:open', async (_event, filePath) => {
-  if (typeof filePath !== 'string' || !isPathInsideWorkspace(filePath)) {
-    throw new TypeError('File is outside the current workspace');
+  if (!isSupportedFilePath(filePath)) {
+    throw new TypeError('Unsupported file path');
   }
-  await openDocument(filePath, true);
+  await openDocument(filePath);
   return true;
 });
 

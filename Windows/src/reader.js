@@ -9,6 +9,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  HardDrive,
   Monitor,
   Moon,
   Pencil,
@@ -38,6 +39,7 @@ const ICONS = {
   FileText,
   Folder,
   FolderOpen,
+  HardDrive,
   Monitor,
   Moon,
   PanelLeft,
@@ -317,33 +319,31 @@ async function setMode(nextMode) {
 async function refreshWorkspace() {
   if (!workspaceTree || !window.windowsHost?.getWorkspace) return;
   const snapshot = await window.windowsHost.getWorkspace();
-  workspaceTitle.textContent = snapshot.root ? workspaceName(snapshot.root) : 'Нет папки';
-  workspaceTitle.title = snapshot.root ?? '';
+  workspaceTitle.textContent = 'Обзор файлов';
+  workspaceTitle.title = 'Быстрый доступ и диски этого компьютера';
   workspaceTree.replaceChildren();
 
-  if (!snapshot.root) {
-    const empty = document.createElement('p');
-    empty.className = 'workspace-empty';
-    empty.textContent = 'Откройте файл, чтобы увидеть окружение';
-    workspaceTree.append(empty);
-    return;
-  }
-
-  const list = document.createElement('ul');
-  list.className = 'workspace-list';
-  snapshot.entries.forEach(entry => list.append(renderWorkspaceEntry(entry, snapshot.currentFile, 0)));
-  if (snapshot.entries.length > 0) {
-    workspaceTree.append(list);
-  } else {
-    const empty = document.createElement('p');
-    empty.className = 'workspace-empty';
-    empty.textContent = 'В этой папке пока нет Markdown-файлов';
-    workspaceTree.append(empty);
-  }
+  await appendWorkspaceSection('Быстрый доступ', snapshot.quickAccess, snapshot.currentFile);
+  await appendWorkspaceSection('Этот компьютер', snapshot.drives, snapshot.currentFile);
   createIcons({ icons: ICONS });
 }
 
-function renderWorkspaceEntry(entry, currentFile, depth) {
+async function appendWorkspaceSection(title, entries, currentFile) {
+  const section = document.createElement('section');
+  section.className = 'workspace-section';
+  const heading = document.createElement('h2');
+  heading.className = 'workspace-section-title';
+  heading.textContent = title;
+  section.append(heading);
+
+  const list = document.createElement('ul');
+  list.className = 'workspace-list';
+  for (const entry of entries) list.append(await renderWorkspaceEntry(entry, currentFile, 0));
+  section.append(list);
+  workspaceTree.append(section);
+}
+
+async function renderWorkspaceEntry(entry, currentFile, depth) {
   const item = document.createElement('li');
   const row = document.createElement('button');
   row.type = 'button';
@@ -354,32 +354,61 @@ function renderWorkspaceEntry(entry, currentFile, depth) {
   if (entry.type === 'file') {
     row.innerHTML = `<span class="workspace-spacer"></span>${icon('file-text', 15)}<span>${escapeText(entry.name)}</span>`;
     row.title = entry.path;
-    row.classList.toggle('active', entry.path === currentFile);
+    row.classList.toggle('active', entry.path.toLowerCase() === currentFile?.toLowerCase());
     row.addEventListener('click', () => window.windowsHost.openWorkspaceFile(entry.path));
     return item;
   }
 
-  const containsCurrentFile = currentFile?.startsWith(`${entry.path}\\`) ?? false;
-  let expanded = containsCurrentFile;
-  row.innerHTML = `${icon(expanded ? 'chevron-down' : 'chevron-right', 14)}${icon(expanded ? 'folder-open' : 'folder', 15)}<span>${escapeText(entry.name)}</span>`;
-  row.setAttribute('aria-expanded', String(expanded));
+  let expanded = false;
+  let loaded = false;
   const children = document.createElement('ul');
   children.className = 'workspace-list';
-  children.hidden = !expanded;
-  entry.children.forEach(child => children.append(renderWorkspaceEntry(child, currentFile, depth + 1)));
+  children.hidden = true;
   item.append(children);
-  row.addEventListener('click', () => {
-    expanded = !expanded;
+
+  const updateRow = () => {
     children.hidden = !expanded;
     row.setAttribute('aria-expanded', String(expanded));
-    row.innerHTML = `${icon(expanded ? 'chevron-down' : 'chevron-right', 14)}${icon(expanded ? 'folder-open' : 'folder', 15)}<span>${escapeText(entry.name)}</span>`;
+    const folderIcon = entry.drive ? 'hard-drive' : expanded ? 'folder-open' : 'folder';
+    row.innerHTML = `${icon(expanded ? 'chevron-down' : 'chevron-right', 14)}${icon(folderIcon, 15)}<span>${escapeText(entry.name)}</span>`;
+    row.title = entry.path;
     createIcons({ icons: ICONS });
-  });
+  };
+
+  const setExpanded = async nextExpanded => {
+    expanded = nextExpanded;
+    updateRow();
+    if (!expanded || loaded) return;
+    row.classList.add('loading');
+    const result = await window.windowsHost.getWorkspaceChildren(entry.path);
+    children.replaceChildren();
+    if (result.inaccessible) {
+      children.append(workspaceMessage('Нет доступа к папке', depth + 1));
+    } else if (result.entries.length === 0) {
+      children.append(workspaceMessage('Папка пуста', depth + 1));
+    } else {
+      for (const child of result.entries) {
+        children.append(await renderWorkspaceEntry(child, currentFile, depth + 1));
+      }
+      if (result.truncated) children.append(workspaceMessage('Показаны первые 1000 элементов', depth + 1));
+    }
+    loaded = true;
+    row.classList.remove('loading');
+    createIcons({ icons: ICONS });
+  };
+
+  row.addEventListener('click', () => setExpanded(!expanded));
+  updateRow();
+  if (entry.expanded) await setExpanded(true);
   return item;
 }
 
-function workspaceName(workspacePath) {
-  return workspacePath.split(/[\\/]/).filter(Boolean).at(-1) ?? workspacePath;
+function workspaceMessage(text, depth) {
+  const message = document.createElement('li');
+  message.className = 'workspace-inline-message';
+  message.style.setProperty('--workspace-depth', depth);
+  message.textContent = text;
+  return message;
 }
 
 function escapeText(value) {

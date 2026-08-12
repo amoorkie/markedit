@@ -470,6 +470,22 @@ body {
   padding: 8px 6px 24px;
 }
 
+.workspace-section + .workspace-section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--reader-border);
+}
+
+.workspace-section-title {
+  margin: 0;
+  padding: 0 10px 6px;
+  color: var(--reader-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .workspace-list {
   margin: 0;
   padding: 0;
@@ -507,6 +523,10 @@ body {
   color: var(--reader-accent);
 }
 
+.workspace-row.loading {
+  opacity: 0.65;
+}
+
 .workspace-row > span {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -522,6 +542,13 @@ body {
   color: var(--reader-muted);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.workspace-inline-message {
+  padding: 6px 8px 6px calc(32px + var(--workspace-depth) * 14px);
+  color: var(--reader-muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .sidebar-open #reader,
