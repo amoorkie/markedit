@@ -125,6 +125,9 @@ function createInterface() {
       <nav id="workspace-tree" class="workspace-tree" aria-label="Файлы"></nav>
     </aside>
     <div class="floating-controls" aria-label="Управление документом">
+      <button class="icon-button" id="new-file-button" type="button" title="Новый Markdown-файл" aria-label="Создать Markdown-файл">
+        ${icon('plus')}
+      </button>
       <button class="icon-button" id="appearance-button" type="button" title="Оформление" aria-label="Оформление" aria-expanded="false">
         ${icon('settings')}
       </button>
@@ -211,18 +214,8 @@ function bindInterface() {
   settingsButton.addEventListener('click', () => setSettingsOpen(settingsPanel.hidden));
   document.getElementById('appearance-close').addEventListener('click', () => setSettingsOpen(false));
   workspaceButton.addEventListener('click', () => setWorkspaceOpen(true));
-  document.getElementById('workspace-new-file').addEventListener('click', async event => {
-    const button = event.currentTarget;
-    button.disabled = true;
-    try {
-      if (await window.windowsHost.createWorkspaceFile()) {
-        await setMode('read');
-        await refreshWorkspace();
-      }
-    } finally {
-      button.disabled = false;
-    }
-  });
+  bindCreateFileButton(document.getElementById('workspace-new-file'));
+  bindCreateFileButton(document.getElementById('new-file-button'));
   document.getElementById('workspace-close').addEventListener('click', () => setWorkspaceOpen(false));
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !settingsPanel.hidden) setSettingsOpen(false);
@@ -247,6 +240,20 @@ function bindInterface() {
   document.getElementById('width-control').addEventListener('input', event => updateSetting('contentWidth', Number(event.target.value)));
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (settings.scheme === 'system') applySettings();
+  });
+}
+
+function bindCreateFileButton(button) {
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      if (await window.windowsHost.createWorkspaceFile()) {
+        await setMode('read');
+        await refreshWorkspace();
+      }
+    } finally {
+      button.disabled = false;
+    }
   });
 }
 
@@ -325,7 +332,14 @@ async function refreshWorkspace() {
   const list = document.createElement('ul');
   list.className = 'workspace-list';
   snapshot.entries.forEach(entry => list.append(renderWorkspaceEntry(entry, snapshot.currentFile, 0)));
-  workspaceTree.append(list);
+  if (snapshot.entries.length > 0) {
+    workspaceTree.append(list);
+  } else {
+    const empty = document.createElement('p');
+    empty.className = 'workspace-empty';
+    empty.textContent = 'В этой папке пока нет Markdown-файлов';
+    workspaceTree.append(empty);
+  }
   createIcons({ icons: ICONS });
 }
 

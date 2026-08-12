@@ -67,7 +67,7 @@ async function confirmDiscard() {
 async function newDocument() {
   if (!await confirmDiscard()) return;
   currentFile = undefined;
-  workspaceRoot = undefined;
+  workspaceRoot = app.getPath('documents');
   await resetEditor('');
 }
 
@@ -243,6 +243,7 @@ function buildMenu() {
 }
 
 async function createWindow(initialFile) {
+  workspaceRoot = app.getPath('documents');
   mainWindow = new BrowserWindow({
     width: 1040,
     height: 760,
