@@ -120,9 +120,6 @@ function createInterface() {
           <strong id="workspace-title">Нет папки</strong>
         </div>
         <div class="workspace-actions">
-          <button class="icon-button icon-button-small" id="workspace-select-folder" type="button" title="Выбрать папку" aria-label="Выбрать папку">
-            ${icon('folder-open', 17)}
-          </button>
           <button class="icon-button icon-button-small" id="workspace-new-folder" type="button" title="Новая папка" aria-label="Создать папку">
             ${icon('folder-plus', 17)}
           </button>
@@ -134,6 +131,13 @@ function createInterface() {
           </button>
         </div>
       </header>
+      <label class="workspace-drive-control">
+        <span>Диск</span>
+        <span class="workspace-drive-select">
+          <select id="workspace-drive-select" aria-label="Выбрать диск"></select>
+          ${icon('chevron-down', 14)}
+        </span>
+      </label>
       <section class="workspace-recent">
         <button class="workspace-accordion" id="workspace-recent-toggle" type="button" aria-expanded="false" aria-controls="workspace-recent-list">
           ${icon('chevron-right', 14)}<span>Недавние</span>
@@ -236,13 +240,13 @@ function bindInterface() {
     recentFilesOpen = !recentFilesOpen;
     syncRecentFilesAccordion();
   });
-  document.getElementById('workspace-select-folder').addEventListener('click', async event => {
-    const button = event.currentTarget;
-    button.disabled = true;
+  document.getElementById('workspace-drive-select').addEventListener('change', async event => {
+    const select = event.currentTarget;
+    select.disabled = true;
     try {
-      if (await window.windowsHost.selectWorkspaceRoot()) await refreshWorkspace();
+      if (await window.windowsHost.selectWorkspaceDrive(select.value)) await refreshWorkspace();
     } finally {
-      button.disabled = false;
+      select.disabled = false;
     }
   });
   document.getElementById('workspace-new-folder').addEventListener('click', () => showNewFolderInput());
@@ -352,6 +356,14 @@ async function refreshWorkspace() {
   workspaceTitle.textContent = workspaceName(snapshot.root);
   workspaceTitle.title = snapshot.root;
   workspaceTree.replaceChildren();
+  const driveSelect = document.getElementById('workspace-drive-select');
+  driveSelect.replaceChildren(...snapshot.drives.map(drive => {
+    const option = document.createElement('option');
+    option.value = drive.path;
+    option.textContent = drive.name;
+    return option;
+  }));
+  driveSelect.value = snapshot.root;
   renderRecentFiles(snapshot.recentFiles ?? [], snapshot.currentFile);
 
   const list = document.createElement('ul');

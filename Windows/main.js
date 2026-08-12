@@ -81,7 +81,7 @@ async function rememberWorkspaceRoot() {
 }
 
 async function setWorkspaceRoot(directory) {
-  workspaceRoot = path.resolve(directory);
+  workspaceRoot = path.parse(path.resolve(directory)).root;
   await rememberWorkspaceRoot();
 }
 
@@ -93,12 +93,43 @@ async function loadWorkspaceRoot() {
       : [];
     if (typeof saved.root === 'string' && path.isAbsolute(saved.root)) {
       await fs.access(saved.root);
-      return path.resolve(saved.root);
+      return path.parse(path.resolve(saved.root)).root;
     }
   } catch {
     // Fall back to Documents when no saved folder is available.
   }
-  return app.getPath('documents');
+  return path.parse(app.getPath('documents')).root;
+}
+
+async function importSystemRecentFiles() {
+  let shortcuts;
+  try {
+    shortcuts = await fs.readdir(app.getPath('recent'), { withFileTypes: true });
+  } catch {
+    return;
+  }
+  const candidates = await Promise.all(shortcuts
+    .filter(entry => entry.isFile() && path.extname(entry.name).toLowerCase() === '.lnk')
+    .map(async entry => {
+      const shortcutPath = path.join(app.getPath('recent'), entry.name);
+      try {
+        const [{ mtimeMs }, details] = await Promise.all([
+          fs.stat(shortcutPath),
+          Promise.resolve(shell.readShortcutLink(shortcutPath)),
+        ]);
+        const target = details.target && path.resolve(details.target);
+        if (!target || !isSupportedFilePath(target)) return null;
+        await fs.access(target);
+        return { target, mtimeMs };
+      } catch {
+        return null;
+      }
+    }));
+  const systemFiles = candidates.filter(Boolean).sort((left, right) => right.mtimeMs - left.mtimeMs).map(entry => entry.target);
+  recentFiles = [...systemFiles, ...recentFiles].filter((file, index, files) => (
+    files.findIndex(candidate => candidate.toLowerCase() === file.toLowerCase()) === index
+  )).slice(0, 12);
+  await rememberWorkspaceRoot();
 }
 
 async function recordRecentFile(filePath) {
@@ -178,10 +209,19 @@ async function workspaceSnapshot() {
   const contents = await readWorkspaceDirectory(workspaceRoot);
   return {
     root: workspaceRoot,
+    drives: await availableDrives(),
     currentFile,
     recentFiles: await availableRecentFiles(),
     ...contents,
   };
+}
+
+async function selectWorkspaceDrive(drivePath) {
+  const drives = await availableDrives();
+  const drive = drives.find(entry => entry.path.toLowerCase() === String(drivePath).toLowerCase());
+  if (!drive) throw new TypeError('Недопустимый диск');
+  await setWorkspaceRoot(drive.path);
+  return workspaceSnapshot();
 }
 
 async function selectWorkspaceRoot() {
@@ -315,7 +355,7 @@ async function createWorkspaceFile() {
 
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Создать Markdown-файл',
-    defaultPath: path.join(workspaceRoot || app.getPath('documents'), 'Новый документ.md'),
+    defaultPath: path.join(currentFile ? path.dirname(currentFile) : app.getPath('documents'), 'Новый документ.md'),
     buttonLabel: 'Создать',
     filters: [{ name: 'Markdown', extensions: ['md'] }],
   });
@@ -335,6 +375,19 @@ async function createWorkspaceFile() {
     dialog.showErrorBox('Не удалось создать файл', error.message);
     return false;
   }
+}
+
+async function availableDrives() {
+  const letters = Array.from({ length: 24 }, (_, index) => `${String.fromCharCode(67 + index)}:\\`);
+  const drives = await Promise.all(letters.map(async drivePath => {
+    try {
+      await fs.access(drivePath);
+      return { name: drivePath.slice(0, 2), path: drivePath };
+    } catch {
+      return null;
+    }
+  }));
+  return drives.filter(Boolean);
 }
 
 async function readWorkspaceDirectory(directory) {
@@ -419,6 +472,7 @@ function buildMenu() {
 
 async function createWindow(initialFile) {
   workspaceRoot = await loadWorkspaceRoot();
+  await importSystemRecentFiles();
   mainWindow = new BrowserWindow({
     width: 1040,
     height: 760,
@@ -479,6 +533,7 @@ ipcMain.handle('clipboard:write', (_event, text) => {
 ipcMain.handle('document:save', () => saveDocument());
 ipcMain.handle('workspace:snapshot', () => workspaceSnapshot());
 ipcMain.handle('workspace:select-root', () => selectWorkspaceRoot());
+ipcMain.handle('workspace:select-drive', (_event, drivePath) => selectWorkspaceDrive(drivePath));
 ipcMain.handle('workspace:create-folder', (_event, name) => createWorkspaceFolder(name));
 ipcMain.handle('workspace:delete-entry', (_event, target) => deleteWorkspaceEntry(target));
 ipcMain.handle('workspace:move-entry', (_event, source, destination) => moveWorkspaceEntry(source, destination));

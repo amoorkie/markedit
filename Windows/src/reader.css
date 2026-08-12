@@ -470,6 +470,50 @@ body {
   padding: 8px 6px 24px;
 }
 
+.workspace-drive-control {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--reader-border);
+  color: var(--reader-muted);
+  font-size: 11px;
+}
+
+.workspace-drive-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.workspace-drive-select select {
+  width: 66px;
+  height: 26px;
+  padding: 0 24px 0 9px;
+  border: 1px solid var(--reader-border);
+  border-radius: 6px;
+  appearance: none;
+  background: var(--reader-surface);
+  color: var(--reader-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.workspace-drive-select svg {
+  position: absolute;
+  right: 7px;
+  pointer-events: none;
+  color: var(--reader-muted);
+}
+
+.workspace-drive-select select:focus-visible {
+  border-color: var(--reader-accent);
+  outline: none;
+}
+
 .workspace-recent {
   flex: 0 0 auto;
   border-bottom: 1px solid var(--reader-border);
