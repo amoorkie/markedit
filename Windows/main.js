@@ -242,6 +242,12 @@ function isInsideWorkspace(target) {
   return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
+function isWorkspaceRootOrInside(target) {
+  return typeof target === 'string'
+    && path.isAbsolute(target)
+    && (path.resolve(target).toLowerCase() === path.resolve(workspaceRoot).toLowerCase() || isInsideWorkspace(target));
+}
+
 async function createWorkspaceFolder(name) {
   const folderName = typeof name === 'string' ? name.trim() : '';
   if (!folderName || folderName === '.' || folderName === '..' || /[<>:"/\\|?*]/.test(folderName)) {
@@ -294,7 +300,7 @@ async function deleteWorkspaceEntry(target) {
 }
 
 async function moveWorkspaceEntry(source, destinationDirectory) {
-  if (!isInsideWorkspace(source) || !isInsideWorkspace(destinationDirectory)) {
+  if (!isInsideWorkspace(source) || !isWorkspaceRootOrInside(destinationDirectory)) {
     throw new TypeError('Недопустимый путь');
   }
   const resolvedSource = path.resolve(source);
@@ -348,6 +354,26 @@ async function moveWorkspaceEntry(source, destinationDirectory) {
     dialog.showErrorBox('Не удалось переместить', error.message);
     return false;
   }
+}
+
+async function chooseMoveDestination(source) {
+  if (!isInsideWorkspace(source)) throw new TypeError('Недопустимый путь');
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: `Куда переместить «${path.basename(source)}»?`,
+    defaultPath: path.dirname(source),
+    buttonLabel: 'Переместить',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (result.canceled || !result.filePaths[0]) return false;
+  if (!isWorkspaceRootOrInside(result.filePaths[0])) {
+    dialog.showErrorBox('Нельзя переместить', `Выберите папку на диске ${workspaceNameForPath(workspaceRoot)}.`);
+    return false;
+  }
+  return moveWorkspaceEntry(source, result.filePaths[0]);
+}
+
+function workspaceNameForPath(target) {
+  return path.parse(target).root.replace(/[\\/]+$/, '');
 }
 
 async function createWorkspaceFile() {
@@ -537,6 +563,7 @@ ipcMain.handle('workspace:select-drive', (_event, drivePath) => selectWorkspaceD
 ipcMain.handle('workspace:create-folder', (_event, name) => createWorkspaceFolder(name));
 ipcMain.handle('workspace:delete-entry', (_event, target) => deleteWorkspaceEntry(target));
 ipcMain.handle('workspace:move-entry', (_event, source, destination) => moveWorkspaceEntry(source, destination));
+ipcMain.handle('workspace:choose-move-destination', (_event, source) => chooseMoveDestination(source));
 ipcMain.handle('workspace:children', (_event, directory) => readWorkspaceDirectory(directory));
 ipcMain.handle('workspace:create-file', () => createWorkspaceFile());
 ipcMain.handle('workspace:open', async (_event, filePath) => {

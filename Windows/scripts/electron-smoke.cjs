@@ -27,6 +27,7 @@ ipcMain.handle('workspace:select-drive', () => false);
 ipcMain.handle('workspace:create-folder', () => false);
 ipcMain.handle('workspace:delete-entry', () => false);
 ipcMain.handle('workspace:move-entry', () => false);
+ipcMain.handle('workspace:choose-move-destination', () => false);
 ipcMain.handle('workspace:create-file', () => false);
 ipcMain.handle('workspace:open', () => true);
 
@@ -144,6 +145,24 @@ app.whenReady().then(async () => {
       recentFiles: 1,
       selectChevron: true,
     });
+
+    await window.webContents.executeJavaScript(`document.querySelector('#workspace-tree .workspace-row:not([aria-expanded])')
+      .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 120, clientY: 200 }))`);
+    const contextMenuState = await window.webContents.executeJavaScript(`({
+      open: !document.getElementById('workspace-context-menu').hidden,
+      actions: [...document.querySelectorAll('.workspace-context-action')].map(button => button.textContent.trim()),
+      danger: document.querySelectorAll('.workspace-context-action.danger').length,
+    })`);
+    assert.deepEqual(contextMenuState, {
+      open: true,
+      actions: ['Открыть', 'Переместить…', 'Удалить'],
+      danger: 1,
+    });
+    await window.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+    assert.equal(
+      await window.webContents.executeJavaScript("document.getElementById('workspace-context-menu').hidden"),
+      true,
+    );
 
     await window.webContents.executeJavaScript("document.querySelector('#workspace-tree .workspace-row[aria-expanded]').click()");
     await new Promise(resolve => setTimeout(resolve, 50));

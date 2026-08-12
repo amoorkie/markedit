@@ -1,6 +1,6 @@
 {
   "name": "markedit-windows",
-  "version": "1.33.1-win.11",
+  "version": "1.33.1-win.12",
   "description": "Unofficial Windows host for the MarkEdit CoreEditor",
   "main": "main.js",
   "author": "MarkEdit contributors",

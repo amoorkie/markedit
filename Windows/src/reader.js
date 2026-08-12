@@ -9,6 +9,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  FolderInput,
   FolderPlus,
   Monitor,
   Moon,
@@ -40,6 +41,7 @@ const ICONS = {
   FileText,
   Folder,
   FolderOpen,
+  FolderInput,
   FolderPlus,
   Monitor,
   Moon,
@@ -151,6 +153,7 @@ function createInterface() {
       </div>
       <nav id="workspace-tree" class="workspace-tree" aria-label="Файлы"></nav>
     </aside>
+    <div id="workspace-context-menu" class="workspace-context-menu" role="menu" aria-label="Действия с файлом" hidden></div>
     <div class="floating-controls" aria-label="Управление документом">
       <button class="icon-button" id="new-file-button" type="button" title="Новый Markdown-файл" aria-label="Создать Markdown-файл">
         ${icon('plus')}
@@ -253,13 +256,16 @@ function bindInterface() {
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !settingsPanel.hidden) setSettingsOpen(false);
     if (event.key === 'Escape' && driveMenuOpen) setDriveMenuOpen(false);
+    if (event.key === 'Escape') closeWorkspaceContextMenu();
   });
   document.addEventListener('pointerdown', event => {
     if (!settingsPanel.hidden && !settingsPanel.contains(event.target) && !settingsButton.contains(event.target)) {
       setSettingsOpen(false);
     }
     if (driveMenuOpen && !event.target.closest('.workspace-drive-picker')) setDriveMenuOpen(false);
+    if (!event.target.closest('#workspace-context-menu')) closeWorkspaceContextMenu();
   });
+  workspaceTree.addEventListener('scroll', closeWorkspaceContextMenu, { passive: true });
 
   document.getElementById('scheme-control').addEventListener('click', event => {
     const button = event.target.closest('[data-scheme]');
@@ -498,6 +504,66 @@ function addDeleteAction(item, entry) {
   item.append(button);
 }
 
+function showWorkspaceContextMenu(event, entry) {
+  event.preventDefault();
+  event.stopPropagation();
+  setDriveMenuOpen(false);
+  const menu = document.getElementById('workspace-context-menu');
+  const actions = [];
+  if (entry.type === 'file') {
+    actions.push({
+      label: 'Открыть',
+      icon: 'file-text',
+      run: () => window.windowsHost.openWorkspaceFile(entry.path),
+    });
+  }
+  actions.push({
+    label: 'Переместить…',
+    icon: 'folder-input',
+    run: async () => {
+      if (await window.windowsHost.chooseMoveDestination(entry.path)) await refreshWorkspace();
+    },
+  });
+  actions.push({
+    label: 'Удалить',
+    icon: 'trash-2',
+    danger: true,
+    run: async () => {
+      if (await window.windowsHost.deleteWorkspaceEntry(entry.path)) await refreshWorkspace();
+    },
+  });
+
+  menu.replaceChildren(...actions.map(action => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `workspace-context-action${action.danger ? ' danger' : ''}`;
+    button.setAttribute('role', 'menuitem');
+    button.innerHTML = `${icon(action.icon, 15)}<span>${action.label}</span>`;
+    button.addEventListener('click', async () => {
+      closeWorkspaceContextMenu();
+      button.disabled = true;
+      try {
+        await action.run();
+      } finally {
+        button.disabled = false;
+      }
+    });
+    return button;
+  }));
+  menu.hidden = false;
+  const left = Math.min(event.clientX, window.innerWidth - menu.offsetWidth - 8);
+  const top = Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 8);
+  menu.style.left = `${Math.max(8, left)}px`;
+  menu.style.top = `${Math.max(8, top)}px`;
+  createIcons({ icons: ICONS });
+  menu.querySelector('button')?.focus({ preventScroll: true });
+}
+
+function closeWorkspaceContextMenu() {
+  const menu = document.getElementById('workspace-context-menu');
+  if (menu) menu.hidden = true;
+}
+
 async function renderWorkspaceEntry(entry, currentFile, depth) {
   const item = document.createElement('li');
   const row = document.createElement('button');
@@ -505,6 +571,7 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
   row.className = 'workspace-row';
   row.style.setProperty('--workspace-depth', depth);
   row.draggable = true;
+  row.addEventListener('contextmenu', event => showWorkspaceContextMenu(event, entry));
   row.addEventListener('dragstart', event => {
     draggedWorkspacePath = entry.path;
     event.dataTransfer.effectAllowed = 'move';
