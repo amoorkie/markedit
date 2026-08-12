@@ -10,6 +10,7 @@ ipcMain.handle('document:save', () => true);
 ipcMain.handle('workspace:snapshot', () => ({
   root: 'C:\\Notes',
   currentFile: 'C:\\Notes\\reader-demo.md',
+  recentFiles: [{ type: 'file', name: 'recent.md', path: 'C:\\Elsewhere\\recent.md' }],
   entries: [
     { type: 'directory', name: 'Archive', path: 'C:\\Notes\\Archive' },
     { type: 'file', name: 'reader-demo.md', path: 'C:\\Notes\\reader-demo.md' },
@@ -23,6 +24,7 @@ ipcMain.handle('workspace:children', (_event, directory) => ({
 ipcMain.handle('workspace:select-root', () => false);
 ipcMain.handle('workspace:create-folder', () => false);
 ipcMain.handle('workspace:delete-entry', () => false);
+ipcMain.handle('workspace:move-entry', () => false);
 ipcMain.handle('workspace:create-file', () => false);
 ipcMain.handle('workspace:open', () => true);
 
@@ -112,10 +114,13 @@ app.whenReady().then(async () => {
       sidebarDisplay: getComputedStyle(document.getElementById('workspace-sidebar')).display,
       toggleDisplay: getComputedStyle(document.getElementById('workspace-button')).display,
       title: document.getElementById('workspace-title').textContent,
-      files: document.querySelectorAll('.workspace-row').length,
+      files: document.querySelectorAll('#workspace-tree .workspace-row').length,
       folderPicker: Boolean(document.getElementById('workspace-select-folder')),
       newFolder: Boolean(document.getElementById('workspace-new-folder')),
       deleteButtons: document.querySelectorAll('.workspace-delete').length,
+      draggableRows: document.querySelectorAll('.workspace-row[draggable="true"]').length,
+      recentAccordion: Boolean(document.getElementById('workspace-recent-toggle')),
+      recentFiles: document.querySelectorAll('.workspace-recent-row').length,
       selectChevron: document.querySelector('.select-control svg')?.classList.contains('lucide-chevron-down'),
     })`);
     assert.deepEqual(workspaceState, {
@@ -128,6 +133,9 @@ app.whenReady().then(async () => {
       folderPicker: true,
       newFolder: true,
       deleteButtons: 2,
+      draggableRows: 2,
+      recentAccordion: true,
+      recentFiles: 1,
       selectChevron: true,
     });
 

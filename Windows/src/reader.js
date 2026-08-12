@@ -69,6 +69,8 @@ let workspaceButton;
 let workspaceSidebar;
 let workspaceTree;
 let workspaceTitle;
+let draggedWorkspacePath;
+let recentFilesOpen = false;
 
 function loadSettings() {
   try {
@@ -132,6 +134,12 @@ function createInterface() {
           </button>
         </div>
       </header>
+      <section class="workspace-recent">
+        <button class="workspace-accordion" id="workspace-recent-toggle" type="button" aria-expanded="false" aria-controls="workspace-recent-list">
+          ${icon('chevron-right', 14)}<span>Недавние</span>
+        </button>
+        <ul id="workspace-recent-list" class="workspace-list workspace-recent-list" hidden></ul>
+      </section>
       <nav id="workspace-tree" class="workspace-tree" aria-label="Файлы"></nav>
     </aside>
     <div class="floating-controls" aria-label="Управление документом">
@@ -224,6 +232,10 @@ function bindInterface() {
   settingsButton.addEventListener('click', () => setSettingsOpen(settingsPanel.hidden));
   document.getElementById('appearance-close').addEventListener('click', () => setSettingsOpen(false));
   workspaceButton.addEventListener('click', () => setWorkspaceOpen(true));
+  document.getElementById('workspace-recent-toggle').addEventListener('click', () => {
+    recentFilesOpen = !recentFilesOpen;
+    syncRecentFilesAccordion();
+  });
   document.getElementById('workspace-select-folder').addEventListener('click', async event => {
     const button = event.currentTarget;
     button.disabled = true;
@@ -340,6 +352,7 @@ async function refreshWorkspace() {
   workspaceTitle.textContent = workspaceName(snapshot.root);
   workspaceTitle.title = snapshot.root;
   workspaceTree.replaceChildren();
+  renderRecentFiles(snapshot.recentFiles ?? [], snapshot.currentFile);
 
   const list = document.createElement('ul');
   list.className = 'workspace-list';
@@ -352,6 +365,37 @@ async function refreshWorkspace() {
     if (snapshot.truncated) list.append(workspaceMessage('Показаны первые 1000 элементов', 0));
   }
   workspaceTree.append(list);
+  createIcons({ icons: ICONS });
+}
+
+function renderRecentFiles(files, currentFile) {
+  const list = document.getElementById('workspace-recent-list');
+  list.replaceChildren();
+  if (files.length === 0) {
+    list.append(workspaceMessage('Пока нет файлов', 0));
+  } else {
+    for (const entry of files) {
+      const item = document.createElement('li');
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'workspace-row workspace-recent-row';
+      row.title = entry.path;
+      row.classList.toggle('active', entry.path.toLowerCase() === currentFile?.toLowerCase());
+      row.innerHTML = `<span class="workspace-spacer"></span>${icon('file-text', 15)}<span>${escapeText(entry.name)}</span>`;
+      row.addEventListener('click', () => window.windowsHost.openWorkspaceFile(entry.path));
+      item.append(row);
+      list.append(item);
+    }
+  }
+  syncRecentFilesAccordion();
+}
+
+function syncRecentFilesAccordion() {
+  const toggle = document.getElementById('workspace-recent-toggle');
+  const list = document.getElementById('workspace-recent-list');
+  list.hidden = !recentFilesOpen;
+  toggle.setAttribute('aria-expanded', String(recentFilesOpen));
+  toggle.innerHTML = `${icon(recentFilesOpen ? 'chevron-down' : 'chevron-right', 14)}<span>Недавние</span>`;
   createIcons({ icons: ICONS });
 }
 
@@ -415,6 +459,18 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
   row.type = 'button';
   row.className = 'workspace-row';
   row.style.setProperty('--workspace-depth', depth);
+  row.draggable = true;
+  row.addEventListener('dragstart', event => {
+    draggedWorkspacePath = entry.path;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', entry.path);
+    row.classList.add('dragging');
+  });
+  row.addEventListener('dragend', () => {
+    draggedWorkspacePath = undefined;
+    row.classList.remove('dragging');
+    document.querySelectorAll('.workspace-row.drop-target').forEach(target => target.classList.remove('drop-target'));
+  });
   item.append(row);
 
   if (entry.type === 'file') {
@@ -463,6 +519,30 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
     row.classList.remove('loading');
     createIcons({ icons: ICONS });
   };
+
+  row.addEventListener('dragover', event => {
+    if (!draggedWorkspacePath || draggedWorkspacePath.toLowerCase() === entry.path.toLowerCase()) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    row.classList.add('drop-target');
+  });
+  row.addEventListener('dragleave', event => {
+    if (!row.contains(event.relatedTarget)) row.classList.remove('drop-target');
+  });
+  row.addEventListener('drop', async event => {
+    event.preventDefault();
+    event.stopPropagation();
+    row.classList.remove('drop-target');
+    const source = draggedWorkspacePath || event.dataTransfer.getData('text/plain');
+    draggedWorkspacePath = undefined;
+    if (!source) return;
+    row.classList.add('loading');
+    try {
+      if (await window.windowsHost.moveWorkspaceEntry(source, entry.path)) await refreshWorkspace();
+    } finally {
+      row.classList.remove('loading');
+    }
+  });
 
   row.addEventListener('click', () => setExpanded(!expanded));
   addDeleteAction(item, entry);

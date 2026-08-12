@@ -470,6 +470,48 @@ body {
   padding: 8px 6px 24px;
 }
 
+.workspace-recent {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--reader-border);
+  padding: 5px 6px;
+}
+
+.workspace-accordion {
+  display: grid;
+  width: 100%;
+  height: 28px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--reader-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.workspace-accordion:hover,
+.workspace-accordion:focus-visible {
+  background: var(--reader-surface-hover);
+  color: var(--reader-text);
+  outline: none;
+}
+
+.workspace-recent-list {
+  padding-bottom: 4px;
+}
+
+.workspace-recent-row {
+  padding-left: 22px;
+}
+
 .workspace-list {
   margin: 0;
   padding: 0;
@@ -570,6 +612,17 @@ body {
 
 .workspace-row.loading {
   opacity: 0.65;
+}
+
+.workspace-row.dragging {
+  opacity: 0.38;
+}
+
+.workspace-row.drop-target {
+  background: color-mix(in srgb, var(--reader-accent) 18%, transparent);
+  color: var(--reader-accent);
+  outline: 1px solid color-mix(in srgb, var(--reader-accent) 55%, transparent);
+  outline-offset: -1px;
 }
 
 .workspace-row > span {

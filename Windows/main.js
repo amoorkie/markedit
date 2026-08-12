@@ -5,6 +5,7 @@ const path = require('node:path');
 let mainWindow;
 let currentFile;
 let workspaceRoot;
+let recentFiles = [];
 let dirty = false;
 let forceClose = false;
 
@@ -76,7 +77,7 @@ function workspaceStatePath() {
 async function rememberWorkspaceRoot() {
   if (!workspaceRoot) return;
   await fs.mkdir(app.getPath('userData'), { recursive: true });
-  await fs.writeFile(workspaceStatePath(), JSON.stringify({ root: workspaceRoot }), 'utf8');
+  await fs.writeFile(workspaceStatePath(), JSON.stringify({ root: workspaceRoot, recentFiles }), 'utf8');
 }
 
 async function setWorkspaceRoot(directory) {
@@ -87,6 +88,9 @@ async function setWorkspaceRoot(directory) {
 async function loadWorkspaceRoot() {
   try {
     const saved = JSON.parse(await fs.readFile(workspaceStatePath(), 'utf8'));
+    recentFiles = Array.isArray(saved.recentFiles)
+      ? saved.recentFiles.filter(file => typeof file === 'string' && isSupportedFilePath(file)).slice(0, 12)
+      : [];
     if (typeof saved.root === 'string' && path.isAbsolute(saved.root)) {
       await fs.access(saved.root);
       return path.resolve(saved.root);
@@ -95,6 +99,30 @@ async function loadWorkspaceRoot() {
     // Fall back to Documents when no saved folder is available.
   }
   return app.getPath('documents');
+}
+
+async function recordRecentFile(filePath) {
+  const resolved = path.resolve(filePath);
+  recentFiles = [resolved, ...recentFiles.filter(file => file.toLowerCase() !== resolved.toLowerCase())].slice(0, 12);
+  app.addRecentDocument(resolved);
+  await rememberWorkspaceRoot();
+}
+
+async function availableRecentFiles() {
+  const available = await Promise.all(recentFiles.map(async filePath => {
+    try {
+      await fs.access(filePath);
+      return { type: 'file', name: path.basename(filePath), path: filePath };
+    } catch {
+      return null;
+    }
+  }));
+  const filtered = available.filter(Boolean);
+  if (filtered.length !== recentFiles.length) {
+    recentFiles = filtered.map(entry => entry.path);
+    await rememberWorkspaceRoot();
+  }
+  return filtered;
 }
 
 async function openDocument(filePath) {
@@ -113,7 +141,7 @@ async function openDocument(filePath) {
     currentFile = path.resolve(filePath);
     await setWorkspaceRoot(path.dirname(currentFile));
     await resetEditor(text);
-    app.addRecentDocument(currentFile);
+    await recordRecentFile(currentFile);
   } catch (error) {
     dialog.showErrorBox('Unable to open file', error.message);
   }
@@ -135,7 +163,7 @@ async function saveDocument(saveAs = false) {
     currentFile = path.resolve(target);
     await setWorkspaceRoot(path.dirname(currentFile));
     dirty = false;
-    app.addRecentDocument(currentFile);
+    await recordRecentFile(currentFile);
     updateTitle();
     await mainWindow.webContents.executeJavaScript('window.markEditWindows?.refreshWorkspace()');
     return true;
@@ -151,6 +179,7 @@ async function workspaceSnapshot() {
   return {
     root: workspaceRoot,
     currentFile,
+    recentFiles: await availableRecentFiles(),
     ...contents,
   };
 }
@@ -212,9 +241,71 @@ async function deleteWorkspaceEntry(target) {
   if (answer.response !== 0) return false;
   try {
     await shell.trashItem(resolvedTarget);
+    recentFiles = recentFiles.filter(file => {
+      const relative = path.relative(resolvedTarget, file);
+      return relative !== '' && (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative));
+    });
+    await rememberWorkspaceRoot();
     return workspaceSnapshot();
   } catch (error) {
     dialog.showErrorBox('Не удалось удалить', error.message);
+    return false;
+  }
+}
+
+async function moveWorkspaceEntry(source, destinationDirectory) {
+  if (!isInsideWorkspace(source) || !isInsideWorkspace(destinationDirectory)) {
+    throw new TypeError('Недопустимый путь');
+  }
+  const resolvedSource = path.resolve(source);
+  const resolvedDestination = path.resolve(destinationDirectory);
+  const sourceKey = resolvedSource.toLowerCase();
+  const destinationKey = resolvedDestination.toLowerCase();
+  if (path.dirname(resolvedSource).toLowerCase() === destinationKey) return workspaceSnapshot();
+
+  try {
+    const [sourceStats, destinationStats] = await Promise.all([
+      fs.stat(resolvedSource),
+      fs.stat(resolvedDestination),
+    ]);
+    if (!destinationStats.isDirectory()) throw new Error('Цель переноса не является папкой.');
+    if (sourceStats.isDirectory()) {
+      const relativeDestination = path.relative(resolvedSource, resolvedDestination);
+      if (relativeDestination === '' || (!relativeDestination.startsWith(`..${path.sep}`) && relativeDestination !== '..' && !path.isAbsolute(relativeDestination))) {
+        throw new Error('Нельзя переместить папку внутрь самой себя.');
+      }
+    }
+
+    const target = path.join(resolvedDestination, path.basename(resolvedSource));
+    try {
+      await fs.access(target);
+      throw new Error('В целевой папке уже есть объект с таким именем.');
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+
+    await fs.rename(resolvedSource, target);
+    if (currentFile) {
+      const currentKey = currentFile.toLowerCase();
+      if (currentKey === sourceKey || currentKey.startsWith(`${sourceKey}${path.sep}`)) {
+        currentFile = path.join(target, path.relative(resolvedSource, currentFile));
+        updateTitle();
+        await recordRecentFile(currentFile);
+      }
+    }
+    recentFiles = recentFiles.map(file => {
+      const key = file.toLowerCase();
+      return key === sourceKey || key.startsWith(`${sourceKey}${path.sep}`)
+        ? path.join(target, path.relative(resolvedSource, file))
+        : file;
+    });
+    recentFiles = recentFiles.filter((file, index, files) => (
+      files.findIndex(candidate => candidate.toLowerCase() === file.toLowerCase()) === index
+    ));
+    await rememberWorkspaceRoot();
+    return workspaceSnapshot();
+  } catch (error) {
+    dialog.showErrorBox('Не удалось переместить', error.message);
     return false;
   }
 }
@@ -238,7 +329,7 @@ async function createWorkspaceFile() {
     currentFile = path.resolve(target);
     await setWorkspaceRoot(path.dirname(currentFile));
     await resetEditor('');
-    app.addRecentDocument(currentFile);
+    await recordRecentFile(currentFile);
     return true;
   } catch (error) {
     dialog.showErrorBox('Не удалось создать файл', error.message);
@@ -390,6 +481,7 @@ ipcMain.handle('workspace:snapshot', () => workspaceSnapshot());
 ipcMain.handle('workspace:select-root', () => selectWorkspaceRoot());
 ipcMain.handle('workspace:create-folder', (_event, name) => createWorkspaceFolder(name));
 ipcMain.handle('workspace:delete-entry', (_event, target) => deleteWorkspaceEntry(target));
+ipcMain.handle('workspace:move-entry', (_event, source, destination) => moveWorkspaceEntry(source, destination));
 ipcMain.handle('workspace:children', (_event, directory) => readWorkspaceDirectory(directory));
 ipcMain.handle('workspace:create-file', () => createWorkspaceFile());
 ipcMain.handle('workspace:open', async (_event, filePath) => {
