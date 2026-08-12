@@ -85,6 +85,11 @@ async function setWorkspaceRoot(directory) {
   await rememberWorkspaceRoot();
 }
 
+async function setWorkspaceLocation(directory) {
+  workspaceRoot = path.resolve(directory);
+  await rememberWorkspaceRoot();
+}
+
 async function loadWorkspaceRoot() {
   try {
     const saved = JSON.parse(await fs.readFile(workspaceStatePath(), 'utf8'));
@@ -93,7 +98,9 @@ async function loadWorkspaceRoot() {
       : [];
     if (typeof saved.root === 'string' && path.isAbsolute(saved.root)) {
       await fs.access(saved.root);
-      return path.parse(path.resolve(saved.root)).root;
+      const savedRoot = path.resolve(saved.root);
+      const desktop = path.resolve(app.getPath('desktop'));
+      return savedRoot.toLowerCase() === desktop.toLowerCase() ? desktop : path.parse(savedRoot).root;
     }
   } catch {
     // Fall back to Documents when no saved folder is available.
@@ -214,9 +221,12 @@ async function saveDocument(saveAs = false) {
 async function workspaceSnapshot() {
   if (!workspaceRoot) workspaceRoot = await loadWorkspaceRoot();
   const contents = await readWorkspaceDirectory(workspaceRoot);
+  const locations = await availableWorkspaceLocations();
+  const selectedLocation = locations.find(entry => entry.path.toLowerCase() === workspaceRoot.toLowerCase());
   return {
     root: workspaceRoot,
-    drives: await availableDrives(),
+    rootName: selectedLocation?.name ?? workspaceNameForPath(workspaceRoot),
+    drives: locations,
     currentFile,
     recentFiles: await availableRecentFiles(),
     ...contents,
@@ -224,10 +234,10 @@ async function workspaceSnapshot() {
 }
 
 async function selectWorkspaceDrive(drivePath) {
-  const drives = await availableDrives();
+  const drives = await availableWorkspaceLocations();
   const drive = drives.find(entry => entry.path.toLowerCase() === String(drivePath).toLowerCase());
   if (!drive) throw new TypeError('Недопустимый диск');
-  await setWorkspaceRoot(drive.path);
+  await setWorkspaceLocation(drive.path);
   return workspaceSnapshot();
 }
 
@@ -439,6 +449,13 @@ async function availableDrives() {
     }
   }));
   return drives.filter(Boolean);
+}
+
+async function availableWorkspaceLocations() {
+  return [
+    { name: 'Рабочий стол', path: path.resolve(app.getPath('desktop')), kind: 'desktop' },
+    ...await availableDrives(),
+  ];
 }
 
 async function readWorkspaceDirectory(directory) {

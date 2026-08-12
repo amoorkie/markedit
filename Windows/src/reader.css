@@ -488,7 +488,7 @@ body {
 
 .workspace-drive-picker > button {
   display: grid;
-  width: 66px;
+  width: 122px;
   height: 26px;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -525,7 +525,7 @@ body {
   z-index: 20;
   top: calc(100% + 4px);
   right: 0;
-  width: 76px;
+  width: 150px;
   box-sizing: border-box;
   padding: 4px;
   border: 1px solid var(--reader-border);

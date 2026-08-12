@@ -358,7 +358,7 @@ async function setMode(nextMode) {
 async function refreshWorkspace() {
   if (!workspaceTree || !window.windowsHost?.getWorkspace) return;
   const snapshot = await window.windowsHost.getWorkspace();
-  workspaceTitle.textContent = workspaceName(snapshot.root);
+  workspaceTitle.textContent = snapshot.rootName ?? workspaceName(snapshot.root);
   workspaceTitle.title = snapshot.root;
   const rootChanged = renderedWorkspaceRoot?.toLowerCase() !== snapshot.root.toLowerCase();
   if (rootChanged) expandedWorkspacePaths.clear();
@@ -385,7 +385,8 @@ async function refreshWorkspace() {
 
 function renderDrivePicker(drives, selectedDrive) {
   const menu = document.getElementById('workspace-drive-menu');
-  document.getElementById('workspace-drive-label').textContent = workspaceName(selectedDrive);
+  const selectedLocation = drives.find(drive => drive.path.toLowerCase() === selectedDrive.toLowerCase());
+  document.getElementById('workspace-drive-label').textContent = selectedLocation?.name ?? workspaceName(selectedDrive);
   menu.replaceChildren(...drives.map(drive => {
     const option = document.createElement('button');
     option.type = 'button';

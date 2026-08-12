@@ -10,7 +10,13 @@ ipcMain.handle('clipboard:write', (_event, text) => clipboard.writeText(text));
 ipcMain.handle('document:save', () => true);
 ipcMain.handle('workspace:snapshot', () => ({
   root: 'C:\\',
-  drives: [{ name: 'A:', path: 'A:\\' }, { name: 'C:', path: 'C:\\' }, { name: 'D:', path: 'D:\\' }],
+  rootName: 'C:',
+  drives: [
+    { name: 'Рабочий стол', path: 'C:\\Users\\Test\\Desktop', kind: 'desktop' },
+    { name: 'A:', path: 'A:\\' },
+    { name: 'C:', path: 'C:\\' },
+    { name: 'D:', path: 'D:\\' },
+  ],
   currentFile: 'C:\\reader-demo.md',
   recentFiles: [{ type: 'file', name: 'recent.md', path: 'C:\\Elsewhere\\recent.md' }],
   entries: [
@@ -125,6 +131,7 @@ app.whenReady().then(async () => {
       files: document.querySelectorAll('#workspace-tree .workspace-row').length,
       driveOptions: document.querySelectorAll('.workspace-drive-option').length,
       selectedDrive: document.getElementById('workspace-drive-label').textContent,
+      desktopOption: document.querySelector('.workspace-drive-option')?.textContent.trim(),
       recentBeforeDrive: Boolean(document.querySelector('.workspace-recent + .workspace-drive-control')),
       newFolder: Boolean(document.getElementById('workspace-new-folder')),
       deleteButtons: document.querySelectorAll('.workspace-delete').length,
@@ -140,8 +147,9 @@ app.whenReady().then(async () => {
       toggleDisplay: 'none',
       title: 'C:',
       files: 2,
-      driveOptions: 3,
+      driveOptions: 4,
       selectedDrive: 'C:',
+      desktopOption: 'Рабочий стол',
       recentBeforeDrive: true,
       newFolder: true,
       deleteButtons: 2,
