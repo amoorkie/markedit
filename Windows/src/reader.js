@@ -12,6 +12,7 @@ import {
   Monitor,
   Moon,
   Pencil,
+  Plus,
   PanelLeft,
   PanelLeftClose,
   Settings,
@@ -42,6 +43,7 @@ const ICONS = {
   PanelLeft,
   PanelLeftClose,
   Pencil,
+  Plus,
   Settings,
   Sun,
   X,
@@ -111,9 +113,14 @@ function createInterface() {
           <span class="workspace-eyebrow">Проводник</span>
           <strong id="workspace-title">Нет папки</strong>
         </div>
-        <button class="icon-button icon-button-small" id="workspace-close" type="button" title="Скрыть проводник" aria-label="Скрыть проводник">
-          ${icon('panel-left-close', 17)}
-        </button>
+        <div class="workspace-actions">
+          <button class="icon-button icon-button-small" id="workspace-new-file" type="button" title="Новый Markdown-файл" aria-label="Создать Markdown-файл">
+            ${icon('plus', 17)}
+          </button>
+          <button class="icon-button icon-button-small" id="workspace-close" type="button" title="Скрыть проводник" aria-label="Скрыть проводник">
+            ${icon('panel-left-close', 17)}
+          </button>
+        </div>
       </header>
       <nav id="workspace-tree" class="workspace-tree" aria-label="Файлы"></nav>
     </aside>
@@ -204,6 +211,18 @@ function bindInterface() {
   settingsButton.addEventListener('click', () => setSettingsOpen(settingsPanel.hidden));
   document.getElementById('appearance-close').addEventListener('click', () => setSettingsOpen(false));
   workspaceButton.addEventListener('click', () => setWorkspaceOpen(true));
+  document.getElementById('workspace-new-file').addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      if (await window.windowsHost.createWorkspaceFile()) {
+        await setMode('read');
+        await refreshWorkspace();
+      }
+    } finally {
+      button.disabled = false;
+    }
+  });
   document.getElementById('workspace-close').addEventListener('click', () => setWorkspaceOpen(false));
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !settingsPanel.hidden) setSettingsOpen(false);

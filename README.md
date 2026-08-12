@@ -4,9 +4,9 @@
 
 ## Скачать
 
-[Скачать MarkEdit для Windows (x64)](https://github.com/amoorkie/markedit/releases/latest/download/MarkEdit-Windows-1.33.1-win.3-Setup.exe)
+[Скачать MarkEdit для Windows (x64)](https://github.com/amoorkie/markedit/releases/latest/download/MarkEdit-Windows-1.33.1-win.4-Setup.exe)
 
-Текущая версия: `1.33.1-win.3`.
+Текущая версия: `1.33.1-win.4`.
 
 Установщик пока не подписан цифровой подписью. Если Windows SmartScreen покажет предупреждение, выберите **Подробнее**, затем **Выполнить в любом случае**.
 
@@ -18,12 +18,13 @@
 - копирование смыслового блока Markdown по заголовку `#`, `##`, `###` и ниже;
 - настройка темы, шрифта, ширины текста и оформления;
 - скрываемый файловый сайдбар для перехода между Markdown-файлами в папке;
+- создание нового Markdown-файла кнопкой `+` в файловом сайдбаре;
 - регистрация MarkEdit как приложения для `.md`, `.markdown`, `.mdown` и `.mkd`.
 
 ## Установка
 
 1. Скачайте установщик по ссылке выше.
-2. Запустите `MarkEdit-Windows-1.33.1-win.3-Setup.exe`.
+2. Запустите `MarkEdit-Windows-1.33.1-win.4-Setup.exe`.
 3. Выберите папку установки и завершите установку.
 4. При необходимости назначьте MarkEdit приложением по умолчанию для `.md` в параметрах Windows.
 

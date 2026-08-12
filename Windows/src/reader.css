@@ -459,6 +459,12 @@ body {
   white-space: nowrap;
 }
 
+.workspace-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
 .workspace-tree {
   overflow: auto;
   padding: 8px 6px 24px;

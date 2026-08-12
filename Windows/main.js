@@ -129,6 +129,33 @@ async function workspaceSnapshot() {
   };
 }
 
+async function createWorkspaceFile() {
+  if (!await confirmDiscard()) return false;
+
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Создать Markdown-файл',
+    defaultPath: path.join(workspaceRoot || app.getPath('documents'), 'Новый документ.md'),
+    buttonLabel: 'Создать',
+    filters: [{ name: 'Markdown', extensions: ['md'] }],
+  });
+  if (result.canceled || !result.filePath) return false;
+
+  let target = result.filePath;
+  if (!path.extname(target)) target += '.md';
+
+  try {
+    await fs.writeFile(target, '', 'utf8');
+    currentFile = path.resolve(target);
+    workspaceRoot = path.dirname(currentFile);
+    await resetEditor('');
+    app.addRecentDocument(currentFile);
+    return true;
+  } catch (error) {
+    dialog.showErrorBox('Не удалось создать файл', error.message);
+    return false;
+  }
+}
+
 async function readWorkspaceDirectory(directory, depth, budget) {
   if (depth > 5 || budget.remaining <= 0) return [];
   let directoryEntries;
@@ -275,6 +302,7 @@ ipcMain.handle('clipboard:write', (_event, text) => {
 
 ipcMain.handle('document:save', () => saveDocument());
 ipcMain.handle('workspace:snapshot', () => workspaceSnapshot());
+ipcMain.handle('workspace:create-file', () => createWorkspaceFile());
 ipcMain.handle('workspace:open', async (_event, filePath) => {
   if (typeof filePath !== 'string' || !isPathInsideWorkspace(filePath)) {
     throw new TypeError('File is outside the current workspace');
