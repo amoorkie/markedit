@@ -255,6 +255,13 @@ function isWorkspaceRootOrInside(target) {
     && (path.resolve(target).toLowerCase() === path.resolve(workspaceRoot).toLowerCase() || isInsideWorkspace(target));
 }
 
+function isRecentFile(target) {
+  return typeof target === 'string'
+    && path.isAbsolute(target)
+    && supportedExtensions.has(path.extname(target).toLowerCase())
+    && recentFiles.some(file => file.toLowerCase() === path.resolve(target).toLowerCase());
+}
+
 async function createWorkspaceFolder(name) {
   const folderName = typeof name === 'string' ? name.trim() : '';
   if (!folderName || folderName === '.' || folderName === '..' || /[<>:"/\\|?*]/.test(folderName)) {
@@ -306,8 +313,12 @@ async function deleteWorkspaceEntry(target) {
   }
 }
 
-async function moveWorkspaceEntry(source, destinationDirectory) {
-  if (!isInsideWorkspace(source) || !isWorkspaceRootOrInside(destinationDirectory)) {
+async function moveWorkspaceEntry(source, destinationDirectory, { allowRecent = false } = {}) {
+  const recentSource = allowRecent && isRecentFile(source);
+  const validDestination = allowRecent
+    ? typeof destinationDirectory === 'string' && path.isAbsolute(destinationDirectory)
+    : isWorkspaceRootOrInside(destinationDirectory);
+  if ((!isInsideWorkspace(source) && !recentSource) || !validDestination) {
     throw new TypeError('Недопустимый путь');
   }
   const resolvedSource = path.resolve(source);
@@ -337,7 +348,13 @@ async function moveWorkspaceEntry(source, destinationDirectory) {
       if (error.code !== 'ENOENT') throw error;
     }
 
-    await fs.rename(resolvedSource, target);
+    try {
+      await fs.rename(resolvedSource, target);
+    } catch (error) {
+      if (error.code !== 'EXDEV' || !sourceStats.isFile()) throw error;
+      await fs.copyFile(resolvedSource, target);
+      await fs.unlink(resolvedSource);
+    }
     if (currentFile) {
       const currentKey = currentFile.toLowerCase();
       if (currentKey === sourceKey || currentKey.startsWith(`${sourceKey}${path.sep}`)) {
@@ -364,7 +381,8 @@ async function moveWorkspaceEntry(source, destinationDirectory) {
 }
 
 async function chooseMoveDestination(source) {
-  if (!isInsideWorkspace(source)) throw new TypeError('Недопустимый путь');
+  const recentSource = isRecentFile(source);
+  if (!isInsideWorkspace(source) && !recentSource) throw new TypeError('Недопустимый путь');
   const result = await dialog.showOpenDialog(mainWindow, {
     title: `Куда переместить «${path.basename(source)}»?`,
     defaultPath: path.dirname(source),
@@ -372,11 +390,11 @@ async function chooseMoveDestination(source) {
     properties: ['openDirectory', 'createDirectory'],
   });
   if (result.canceled || !result.filePaths[0]) return false;
-  if (!isWorkspaceRootOrInside(result.filePaths[0])) {
+  if (!recentSource && !isWorkspaceRootOrInside(result.filePaths[0])) {
     dialog.showErrorBox('Нельзя переместить', `Выберите папку на диске ${workspaceNameForPath(workspaceRoot)}.`);
     return false;
   }
-  return moveWorkspaceEntry(source, result.filePaths[0]);
+  return moveWorkspaceEntry(source, result.filePaths[0], { allowRecent: recentSource });
 }
 
 function workspaceNameForPath(target) {

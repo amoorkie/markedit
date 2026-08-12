@@ -524,6 +524,13 @@ function showWorkspaceContextMenu(event, entry, { recent = false } = {}) {
   }
   if (recent) {
     actions.push({
+      label: 'Переместить…',
+      icon: 'folder-input',
+      run: async () => {
+        if (await window.windowsHost.chooseMoveDestination(entry.path)) await refreshWorkspace();
+      },
+    });
+    actions.push({
       label: 'Убрать из недавних',
       icon: 'x',
       run: async () => {

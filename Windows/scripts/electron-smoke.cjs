@@ -169,7 +169,11 @@ app.whenReady().then(async () => {
     const recentMenuActions = await window.webContents.executeJavaScript(
       "[...document.querySelectorAll('.workspace-context-action')].map(button => button.textContent.trim())",
     );
-    assert.deepEqual(recentMenuActions, ['Открыть', 'Убрать из недавних']);
+    assert.deepEqual(recentMenuActions, ['Открыть', 'Переместить…', 'Убрать из недавних']);
+    assert.match(
+      await window.webContents.executeJavaScript("getComputedStyle(document.getElementById('workspace-context-menu')).fontFamily"),
+      /Segoe UI/,
+    );
     await window.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
 
     await window.webContents.executeJavaScript(`document.querySelector('#workspace-tree .workspace-row:not([aria-expanded])')

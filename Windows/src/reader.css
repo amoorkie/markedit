@@ -532,6 +532,7 @@ body {
   border-radius: 7px;
   background: var(--reader-surface);
   box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
 }
 
 .workspace-drive-option {
@@ -681,6 +682,7 @@ body {
   border-radius: 8px;
   background: var(--reader-surface);
   box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
 }
 
 .workspace-context-action {
