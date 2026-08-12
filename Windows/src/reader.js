@@ -433,7 +433,12 @@ function renderRecentFiles(files, currentFile) {
       row.title = entry.path;
       row.classList.toggle('selected', entry.path.toLowerCase() === currentFile?.toLowerCase());
       row.innerHTML = `<span class="workspace-spacer"></span>${icon('file-text', 15)}<span>${escapeText(entry.name)}</span>`;
-      row.addEventListener('click', () => window.windowsHost.openWorkspaceFile(entry.path));
+      row.addEventListener('click', async () => {
+        document.querySelectorAll('.workspace-row.selected').forEach(selected => selected.classList.remove('selected'));
+        row.classList.add('selected');
+        await window.windowsHost.openWorkspaceFile(entry.path);
+      });
+      row.addEventListener('contextmenu', event => showWorkspaceContextMenu(event, entry, { recent: true }));
       item.append(row);
       list.append(item);
     }
@@ -504,7 +509,7 @@ function addDeleteAction(item, entry) {
   item.append(button);
 }
 
-function showWorkspaceContextMenu(event, entry) {
+function showWorkspaceContextMenu(event, entry, { recent = false } = {}) {
   event.preventDefault();
   event.stopPropagation();
   setDriveMenuOpen(false);
@@ -517,21 +522,31 @@ function showWorkspaceContextMenu(event, entry) {
       run: () => window.windowsHost.openWorkspaceFile(entry.path),
     });
   }
-  actions.push({
-    label: 'Переместить…',
-    icon: 'folder-input',
-    run: async () => {
-      if (await window.windowsHost.chooseMoveDestination(entry.path)) await refreshWorkspace();
-    },
-  });
-  actions.push({
-    label: 'Удалить',
-    icon: 'trash-2',
-    danger: true,
-    run: async () => {
-      if (await window.windowsHost.deleteWorkspaceEntry(entry.path)) await refreshWorkspace();
-    },
-  });
+  if (recent) {
+    actions.push({
+      label: 'Убрать из недавних',
+      icon: 'x',
+      run: async () => {
+        if (await window.windowsHost.removeRecentFile(entry.path)) await refreshWorkspace();
+      },
+    });
+  } else {
+    actions.push({
+      label: 'Переместить…',
+      icon: 'folder-input',
+      run: async () => {
+        if (await window.windowsHost.chooseMoveDestination(entry.path)) await refreshWorkspace();
+      },
+    });
+    actions.push({
+      label: 'Удалить',
+      icon: 'trash-2',
+      danger: true,
+      run: async () => {
+        if (await window.windowsHost.deleteWorkspaceEntry(entry.path)) await refreshWorkspace();
+      },
+    });
+  }
 
   menu.replaceChildren(...actions.map(action => {
     const button = document.createElement('button');

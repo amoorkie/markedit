@@ -156,6 +156,13 @@ async function availableRecentFiles() {
   return filtered;
 }
 
+async function removeRecentFile(filePath) {
+  if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new TypeError('Недопустимый путь');
+  recentFiles = recentFiles.filter(file => file.toLowerCase() !== path.resolve(filePath).toLowerCase());
+  await rememberWorkspaceRoot();
+  return workspaceSnapshot();
+}
+
 async function openDocument(filePath) {
   if (!filePath) {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -564,6 +571,7 @@ ipcMain.handle('workspace:create-folder', (_event, name) => createWorkspaceFolde
 ipcMain.handle('workspace:delete-entry', (_event, target) => deleteWorkspaceEntry(target));
 ipcMain.handle('workspace:move-entry', (_event, source, destination) => moveWorkspaceEntry(source, destination));
 ipcMain.handle('workspace:choose-move-destination', (_event, source) => chooseMoveDestination(source));
+ipcMain.handle('workspace:remove-recent', (_event, filePath) => removeRecentFile(filePath));
 ipcMain.handle('workspace:children', (_event, directory) => readWorkspaceDirectory(directory));
 ipcMain.handle('workspace:create-file', () => createWorkspaceFile());
 ipcMain.handle('workspace:open', async (_event, filePath) => {

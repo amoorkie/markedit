@@ -4,6 +4,7 @@ const path = require('node:path');
 const { app, BrowserWindow, clipboard, ipcMain } = require('electron');
 
 const projectDirectory = path.resolve(__dirname, '..');
+let openedWorkspaceFile;
 
 ipcMain.handle('clipboard:write', (_event, text) => clipboard.writeText(text));
 ipcMain.handle('document:save', () => true);
@@ -28,8 +29,12 @@ ipcMain.handle('workspace:create-folder', () => false);
 ipcMain.handle('workspace:delete-entry', () => false);
 ipcMain.handle('workspace:move-entry', () => false);
 ipcMain.handle('workspace:choose-move-destination', () => false);
+ipcMain.handle('workspace:remove-recent', () => false);
 ipcMain.handle('workspace:create-file', () => false);
-ipcMain.handle('workspace:open', () => true);
+ipcMain.handle('workspace:open', (_event, filePath) => {
+  openedWorkspaceFile = filePath;
+  return true;
+});
 
 app.whenReady().then(async () => {
   const window = new BrowserWindow({
@@ -145,6 +150,27 @@ app.whenReady().then(async () => {
       recentFiles: 1,
       selectChevron: true,
     });
+
+    await window.webContents.executeJavaScript("document.getElementById('workspace-recent-toggle').click()");
+    const recentOpenState = await window.webContents.executeJavaScript(`({
+      expanded: document.getElementById('workspace-recent-toggle').getAttribute('aria-expanded'),
+      hidden: document.getElementById('workspace-recent-list').hidden,
+    })`);
+    assert.deepEqual(recentOpenState, { expanded: 'true', hidden: false });
+    await window.webContents.executeJavaScript("document.querySelector('.workspace-recent-row').click()");
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.equal(openedWorkspaceFile, 'C:\\Elsewhere\\recent.md');
+    assert.equal(
+      await window.webContents.executeJavaScript("document.querySelector('.workspace-recent-row').classList.contains('selected')"),
+      true,
+    );
+    await window.webContents.executeJavaScript(`document.querySelector('.workspace-recent-row')
+      .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 120, clientY: 160 }))`);
+    const recentMenuActions = await window.webContents.executeJavaScript(
+      "[...document.querySelectorAll('.workspace-context-action')].map(button => button.textContent.trim())",
+    );
+    assert.deepEqual(recentMenuActions, ['Открыть', 'Убрать из недавних']);
+    await window.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
 
     await window.webContents.executeJavaScript(`document.querySelector('#workspace-tree .workspace-row:not([aria-expanded])')
       .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 120, clientY: 200 }))`);

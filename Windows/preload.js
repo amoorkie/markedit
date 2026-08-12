@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('windowsHost', {
   deleteWorkspaceEntry: target => ipcRenderer.invoke('workspace:delete-entry', target),
   moveWorkspaceEntry: (source, destination) => ipcRenderer.invoke('workspace:move-entry', source, destination),
   chooseMoveDestination: source => ipcRenderer.invoke('workspace:choose-move-destination', source),
+  removeRecentFile: filePath => ipcRenderer.invoke('workspace:remove-recent', filePath),
   getWorkspaceChildren: directory => ipcRenderer.invoke('workspace:children', directory),
   createWorkspaceFile: () => ipcRenderer.invoke('workspace:create-file'),
   openWorkspaceFile: filePath => ipcRenderer.invoke('workspace:open', filePath),
