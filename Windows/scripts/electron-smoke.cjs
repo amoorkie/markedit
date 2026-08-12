@@ -9,7 +9,7 @@ ipcMain.handle('clipboard:write', (_event, text) => clipboard.writeText(text));
 ipcMain.handle('document:save', () => true);
 ipcMain.handle('workspace:snapshot', () => ({
   root: 'C:\\',
-  drives: [{ name: 'C:', path: 'C:\\' }, { name: 'D:', path: 'D:\\' }],
+  drives: [{ name: 'A:', path: 'A:\\' }, { name: 'C:', path: 'C:\\' }, { name: 'D:', path: 'D:\\' }],
   currentFile: 'C:\\reader-demo.md',
   recentFiles: [{ type: 'file', name: 'recent.md', path: 'C:\\Elsewhere\\recent.md' }],
   entries: [
@@ -117,8 +117,9 @@ app.whenReady().then(async () => {
       toggleDisplay: getComputedStyle(document.getElementById('workspace-button')).display,
       title: document.getElementById('workspace-title').textContent,
       files: document.querySelectorAll('#workspace-tree .workspace-row').length,
-      driveOptions: document.getElementById('workspace-drive-select').options.length,
-      selectedDrive: document.getElementById('workspace-drive-select').value,
+      driveOptions: document.querySelectorAll('.workspace-drive-option').length,
+      selectedDrive: document.getElementById('workspace-drive-label').textContent,
+      recentBeforeDrive: Boolean(document.querySelector('.workspace-recent + .workspace-drive-control')),
       newFolder: Boolean(document.getElementById('workspace-new-folder')),
       deleteButtons: document.querySelectorAll('.workspace-delete').length,
       draggableRows: document.querySelectorAll('.workspace-row[draggable="true"]').length,
@@ -133,8 +134,9 @@ app.whenReady().then(async () => {
       toggleDisplay: 'none',
       title: 'C:',
       files: 2,
-      driveOptions: 2,
-      selectedDrive: 'C:\\',
+      driveOptions: 3,
+      selectedDrive: 'C:',
+      recentBeforeDrive: true,
       newFolder: true,
       deleteButtons: 2,
       draggableRows: 2,
@@ -142,6 +144,21 @@ app.whenReady().then(async () => {
       recentFiles: 1,
       selectChevron: true,
     });
+
+    await window.webContents.executeJavaScript("document.querySelector('#workspace-tree .workspace-row[aria-expanded]').click()");
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(
+      await window.webContents.executeJavaScript("document.querySelector('#workspace-tree .workspace-row[aria-expanded]').getAttribute('aria-expanded')"),
+      'true',
+    );
+    await window.webContents.executeJavaScript('window.markEditWindows.refreshWorkspace()');
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const preservedTreeState = await window.webContents.executeJavaScript(`({
+      expanded: document.querySelector('#workspace-tree .workspace-row[aria-expanded]').getAttribute('aria-expanded'),
+      rows: document.querySelectorAll('#workspace-tree .workspace-row').length,
+      selected: document.querySelectorAll('#workspace-tree .workspace-row.selected').length,
+    })`);
+    assert.deepEqual(preservedTreeState, { expanded: 'true', rows: 3, selected: 1 });
 
     console.log('Electron reader smoke test passed');
     window.destroy();

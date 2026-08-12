@@ -482,36 +482,84 @@ body {
   font-size: 11px;
 }
 
-.workspace-drive-select {
+.workspace-drive-picker {
   position: relative;
-  display: inline-flex;
-  align-items: center;
 }
 
-.workspace-drive-select select {
+.workspace-drive-picker > button {
+  display: grid;
   width: 66px;
   height: 26px;
-  padding: 0 24px 0 9px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px 0 9px;
   border: 1px solid var(--reader-border);
   border-radius: 6px;
-  appearance: none;
   background: var(--reader-surface);
   color: var(--reader-text);
   font: inherit;
   font-size: 12px;
+  text-align: left;
   cursor: pointer;
 }
 
-.workspace-drive-select svg {
-  position: absolute;
-  right: 7px;
-  pointer-events: none;
-  color: var(--reader-muted);
+.workspace-drive-picker > button:hover,
+.workspace-drive-picker > button.open,
+.workspace-drive-picker > button:focus-visible {
+  border-color: color-mix(in srgb, var(--reader-accent) 60%, var(--reader-border));
+  outline: none;
 }
 
-.workspace-drive-select select:focus-visible {
-  border-color: var(--reader-accent);
+.workspace-drive-picker > button svg {
+  color: var(--reader-muted);
+  transition: transform 120ms ease;
+}
+
+.workspace-drive-picker > button.open svg {
+  transform: rotate(180deg);
+}
+
+.workspace-drive-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 76px;
+  box-sizing: border-box;
+  padding: 4px;
+  border: 1px solid var(--reader-border);
+  border-radius: 7px;
+  background: var(--reader-surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+}
+
+.workspace-drive-option {
+  display: grid;
+  width: 100%;
+  height: 28px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--reader-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-drive-option:hover,
+.workspace-drive-option:focus-visible {
+  background: var(--reader-surface-hover);
   outline: none;
+}
+
+.workspace-drive-option[aria-selected="true"] {
+  background: color-mix(in srgb, var(--reader-accent) 13%, transparent);
+  color: var(--reader-accent);
 }
 
 .workspace-recent {
@@ -649,7 +697,8 @@ body {
   outline: none;
 }
 
-.workspace-row.active {
+.workspace-row.active,
+.workspace-row.selected {
   background: color-mix(in srgb, var(--reader-accent) 14%, transparent);
   color: var(--reader-accent);
 }

@@ -378,7 +378,7 @@ async function createWorkspaceFile() {
 }
 
 async function availableDrives() {
-  const letters = Array.from({ length: 24 }, (_, index) => `${String.fromCharCode(67 + index)}:\\`);
+  const letters = Array.from({ length: 26 }, (_, index) => `${String.fromCharCode(65 + index)}:\\`);
   const drives = await Promise.all(letters.map(async drivePath => {
     try {
       await fs.access(drivePath);

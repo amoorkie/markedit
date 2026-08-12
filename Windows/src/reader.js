@@ -71,6 +71,9 @@ let workspaceTree;
 let workspaceTitle;
 let draggedWorkspacePath;
 let recentFilesOpen = false;
+let driveMenuOpen = false;
+let renderedWorkspaceRoot;
+const expandedWorkspacePaths = new Set();
 
 function loadSettings() {
   try {
@@ -131,19 +134,21 @@ function createInterface() {
           </button>
         </div>
       </header>
-      <label class="workspace-drive-control">
-        <span>Диск</span>
-        <span class="workspace-drive-select">
-          <select id="workspace-drive-select" aria-label="Выбрать диск"></select>
-          ${icon('chevron-down', 14)}
-        </span>
-      </label>
       <section class="workspace-recent">
         <button class="workspace-accordion" id="workspace-recent-toggle" type="button" aria-expanded="false" aria-controls="workspace-recent-list">
           ${icon('chevron-right', 14)}<span>Недавние</span>
         </button>
         <ul id="workspace-recent-list" class="workspace-list workspace-recent-list" hidden></ul>
       </section>
+      <div class="workspace-drive-control">
+        <span>Диск</span>
+        <div class="workspace-drive-picker">
+          <button id="workspace-drive-toggle" type="button" aria-label="Выбрать диск" aria-haspopup="listbox" aria-expanded="false">
+            <span id="workspace-drive-label">—</span>${icon('chevron-down', 14)}
+          </button>
+          <div id="workspace-drive-menu" class="workspace-drive-menu" role="listbox" aria-label="Диски" hidden></div>
+        </div>
+      </div>
       <nav id="workspace-tree" class="workspace-tree" aria-label="Файлы"></nav>
     </aside>
     <div class="floating-controls" aria-label="Управление документом">
@@ -240,26 +245,20 @@ function bindInterface() {
     recentFilesOpen = !recentFilesOpen;
     syncRecentFilesAccordion();
   });
-  document.getElementById('workspace-drive-select').addEventListener('change', async event => {
-    const select = event.currentTarget;
-    select.disabled = true;
-    try {
-      if (await window.windowsHost.selectWorkspaceDrive(select.value)) await refreshWorkspace();
-    } finally {
-      select.disabled = false;
-    }
-  });
+  document.getElementById('workspace-drive-toggle').addEventListener('click', () => setDriveMenuOpen(!driveMenuOpen));
   document.getElementById('workspace-new-folder').addEventListener('click', () => showNewFolderInput());
   bindCreateFileButton(document.getElementById('workspace-new-file'));
   bindCreateFileButton(document.getElementById('new-file-button'));
   document.getElementById('workspace-close').addEventListener('click', () => setWorkspaceOpen(false));
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !settingsPanel.hidden) setSettingsOpen(false);
+    if (event.key === 'Escape' && driveMenuOpen) setDriveMenuOpen(false);
   });
   document.addEventListener('pointerdown', event => {
     if (!settingsPanel.hidden && !settingsPanel.contains(event.target) && !settingsButton.contains(event.target)) {
       setSettingsOpen(false);
     }
+    if (driveMenuOpen && !event.target.closest('.workspace-drive-picker')) setDriveMenuOpen(false);
   });
 
   document.getElementById('scheme-control').addEventListener('click', event => {
@@ -355,15 +354,12 @@ async function refreshWorkspace() {
   const snapshot = await window.windowsHost.getWorkspace();
   workspaceTitle.textContent = workspaceName(snapshot.root);
   workspaceTitle.title = snapshot.root;
+  const rootChanged = renderedWorkspaceRoot?.toLowerCase() !== snapshot.root.toLowerCase();
+  if (rootChanged) expandedWorkspacePaths.clear();
+  renderedWorkspaceRoot = snapshot.root;
+  const previousScrollTop = workspaceTree.scrollTop;
   workspaceTree.replaceChildren();
-  const driveSelect = document.getElementById('workspace-drive-select');
-  driveSelect.replaceChildren(...snapshot.drives.map(drive => {
-    const option = document.createElement('option');
-    option.value = drive.path;
-    option.textContent = drive.name;
-    return option;
-  }));
-  driveSelect.value = snapshot.root;
+  renderDrivePicker(snapshot.drives, snapshot.root);
   renderRecentFiles(snapshot.recentFiles ?? [], snapshot.currentFile);
 
   const list = document.createElement('ul');
@@ -377,7 +373,44 @@ async function refreshWorkspace() {
     if (snapshot.truncated) list.append(workspaceMessage('Показаны первые 1000 элементов', 0));
   }
   workspaceTree.append(list);
+  if (!rootChanged) workspaceTree.scrollTop = previousScrollTop;
   createIcons({ icons: ICONS });
+}
+
+function renderDrivePicker(drives, selectedDrive) {
+  const menu = document.getElementById('workspace-drive-menu');
+  document.getElementById('workspace-drive-label').textContent = workspaceName(selectedDrive);
+  menu.replaceChildren(...drives.map(drive => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'workspace-drive-option';
+    option.setAttribute('role', 'option');
+    option.setAttribute('aria-selected', String(drive.path.toLowerCase() === selectedDrive.toLowerCase()));
+    option.innerHTML = `<span>${escapeText(drive.name)}</span>${drive.path.toLowerCase() === selectedDrive.toLowerCase() ? icon('check', 14) : ''}`;
+    option.addEventListener('click', async () => {
+      setDriveMenuOpen(false);
+      if (drive.path.toLowerCase() === renderedWorkspaceRoot?.toLowerCase()) return;
+      const toggle = document.getElementById('workspace-drive-toggle');
+      toggle.disabled = true;
+      try {
+        if (await window.windowsHost.selectWorkspaceDrive(drive.path)) await refreshWorkspace();
+      } finally {
+        toggle.disabled = false;
+      }
+    });
+    return option;
+  }));
+  setDriveMenuOpen(false);
+}
+
+function setDriveMenuOpen(open) {
+  driveMenuOpen = open;
+  const toggle = document.getElementById('workspace-drive-toggle');
+  const menu = document.getElementById('workspace-drive-menu');
+  menu.hidden = !open;
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.classList.toggle('open', open);
+  if (open) menu.querySelector('[aria-selected="true"]')?.focus({ preventScroll: true });
 }
 
 function renderRecentFiles(files, currentFile) {
@@ -392,7 +425,7 @@ function renderRecentFiles(files, currentFile) {
       row.type = 'button';
       row.className = 'workspace-row workspace-recent-row';
       row.title = entry.path;
-      row.classList.toggle('active', entry.path.toLowerCase() === currentFile?.toLowerCase());
+      row.classList.toggle('selected', entry.path.toLowerCase() === currentFile?.toLowerCase());
       row.innerHTML = `<span class="workspace-spacer"></span>${icon('file-text', 15)}<span>${escapeText(entry.name)}</span>`;
       row.addEventListener('click', () => window.windowsHost.openWorkspaceFile(entry.path));
       item.append(row);
@@ -488,8 +521,12 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
   if (entry.type === 'file') {
     row.innerHTML = `<span class="workspace-spacer"></span>${icon('file-text', 15)}<span>${escapeText(entry.name)}</span>`;
     row.title = entry.path;
-    row.classList.toggle('active', entry.path.toLowerCase() === currentFile?.toLowerCase());
-    row.addEventListener('click', () => window.windowsHost.openWorkspaceFile(entry.path));
+    row.classList.toggle('selected', entry.path.toLowerCase() === currentFile?.toLowerCase());
+    row.addEventListener('click', async () => {
+      workspaceSidebar.querySelectorAll('.workspace-row.selected').forEach(selected => selected.classList.remove('selected'));
+      row.classList.add('selected');
+      await window.windowsHost.openWorkspaceFile(entry.path);
+    });
     addDeleteAction(item, entry);
     return item;
   }
@@ -512,6 +549,9 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
 
   const setExpanded = async nextExpanded => {
     expanded = nextExpanded;
+    const expansionKey = entry.path.toLowerCase();
+    if (expanded) expandedWorkspacePaths.add(expansionKey);
+    else expandedWorkspacePaths.delete(expansionKey);
     updateRow();
     if (!expanded || loaded) return;
     row.classList.add('loading');
@@ -559,7 +599,7 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
   row.addEventListener('click', () => setExpanded(!expanded));
   addDeleteAction(item, entry);
   updateRow();
-  if (entry.expanded) await setExpanded(true);
+  if (expandedWorkspacePaths.has(entry.path.toLowerCase())) await setExpanded(true);
   return item;
 }
 
