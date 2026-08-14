@@ -9,6 +9,12 @@ contextBridge.exposeInMainWorld('windowsHost', {
   createWorkspaceFolder: name => ipcRenderer.invoke('workspace:create-folder', name),
   deleteWorkspaceEntry: target => ipcRenderer.invoke('workspace:delete-entry', target),
   moveWorkspaceEntry: (source, destination) => ipcRenderer.invoke('workspace:move-entry', source, destination),
+  startFileDrag: filePath => ipcRenderer.send('workspace:start-file-drag', filePath),
+  onFileDragEnded: callback => {
+    const listener = () => callback();
+    ipcRenderer.on('workspace:file-drag-ended', listener);
+    return () => ipcRenderer.removeListener('workspace:file-drag-ended', listener);
+  },
   chooseMoveDestination: source => ipcRenderer.invoke('workspace:choose-move-destination', source),
   removeRecentFile: filePath => ipcRenderer.invoke('workspace:remove-recent', filePath),
   getWorkspaceChildren: directory => ipcRenderer.invoke('workspace:children', directory),

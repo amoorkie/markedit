@@ -1,6 +1,6 @@
 {
   "name": "markedit-windows",
-  "version": "1.33.1-win.16",
+  "version": "1.33.1-win.17",
   "description": "Unofficial Windows host for the MarkEdit CoreEditor",
   "main": "main.js",
   "author": "MarkEdit contributors",
@@ -34,12 +34,17 @@
       "editor.html",
       "reader.js",
       "reader.css",
+      "assets/**/*",
       "package.json"
     ],
     "extraResources": [
       {
         "from": "../LICENSE",
         "to": "LICENSE.txt"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "drag-icon.png"
       }
     ],
     "win": {

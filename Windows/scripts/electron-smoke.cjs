@@ -75,6 +75,7 @@ app.whenReady().then(async () => {
       readerHidden: document.getElementById('reader').hidden,
       editorHidden: document.getElementById('editor').hidden,
       copyButtons: document.querySelectorAll('.section-copy').length,
+      inlineCopyButtons: document.querySelectorAll('h1 > .section-copy, h2 > .section-copy, h3 > .section-copy, h4 > .section-copy, h5 > .section-copy, h6 > .section-copy').length,
       readOnly: window.config.readOnlyMode,
     })`);
     assert.deepEqual(readingState, {
@@ -82,6 +83,7 @@ app.whenReady().then(async () => {
       readerHidden: false,
       editorHidden: true,
       copyButtons: 4,
+      inlineCopyButtons: 4,
       readOnly: true,
     });
     await window.webContents.executeJavaScript("document.getElementById('appearance-button').click()");
@@ -90,6 +92,40 @@ app.whenReady().then(async () => {
       await window.webContents.executeJavaScript("document.getElementById('appearance-panel').hidden"),
       false,
     );
+    await window.webContents.executeJavaScript("document.getElementById('font-toggle').click(); document.querySelector('[data-font=\"serif\"]').click()");
+    const fontPickerState = await window.webContents.executeJavaScript(`(async () => {
+      await document.fonts.load('18px "Zen Antique"', 'Статус Stage');
+      return ({
+      nativeSelect: Boolean(document.getElementById('font-control')),
+      options: document.querySelectorAll('.font-option').length,
+      label: document.getElementById('font-label').textContent,
+      zenLoaded: document.fonts.check('18px "Zen Antique"', 'Статус Stage'),
+      });
+    })()`);
+    assert.deepEqual(fontPickerState, {
+      nativeSelect: false,
+      options: 3,
+      label: 'С засечками',
+      zenLoaded: true,
+    });
+    await window.webContents.executeJavaScript("document.getElementById('font-toggle').click(); document.querySelector('[data-font=\"mono\"]').click()");
+    const monoState = await window.webContents.executeJavaScript(`(async () => {
+      await document.fonts.load('18px "JetBrains Mono"', 'const value = 1');
+      return ({
+      expanded: document.getElementById('font-toggle').getAttribute('aria-expanded'),
+      label: document.getElementById('font-label').textContent,
+      selected: document.querySelector('[data-font="mono"]').getAttribute('aria-selected'),
+      family: getComputedStyle(document.getElementById('reader-content')).fontFamily,
+      loaded: document.fonts.check('18px "JetBrains Mono"', 'const value = 1'),
+      });
+    })()`);
+    assert.deepEqual(monoState, {
+      expanded: 'false',
+      label: 'Моноширинный',
+      selected: 'true',
+      family: '"JetBrains Mono", Consolas, monospace',
+      loaded: true,
+    });
     await window.webContents.executeJavaScript("document.getElementById('appearance-close').click()");
 
     clipboard.clear();
@@ -142,7 +178,7 @@ app.whenReady().then(async () => {
       draggableRows: document.querySelectorAll('.workspace-row[draggable="true"]').length,
       recentAccordion: Boolean(document.getElementById('workspace-recent-toggle')),
       recentFiles: document.querySelectorAll('.workspace-recent-row').length,
-      selectChevron: document.querySelector('.select-control svg')?.classList.contains('lucide-chevron-down'),
+      selectChevron: document.querySelector('#font-toggle svg')?.classList.contains('lucide-chevron-down'),
     })`);
     assert.deepEqual(workspaceState, {
       open: true,
@@ -157,7 +193,7 @@ app.whenReady().then(async () => {
       recentBeforeDrive: true,
       newFolder: true,
       deleteButtons: 2,
-      draggableRows: 2,
+      draggableRows: 3,
       recentAccordion: true,
       recentFiles: 1,
       selectChevron: true,
@@ -248,6 +284,18 @@ app.whenReady().then(async () => {
     })()`);
     await new Promise(resolve => setTimeout(resolve, 25));
     assert.deepEqual(moveRequests.at(-1), { source: 'C:\\reader-demo.md', destination: 'C:\\Archive' });
+
+    await window.webContents.executeJavaScript(`(() => {
+      const recentRow = document.querySelector('.workspace-recent-row');
+      const folderRow = [...document.querySelectorAll('#workspace-tree .workspace-row')]
+        .find(element => element.title === 'C:\\\\Archive');
+      const dataTransfer = new DataTransfer();
+      recentRow.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
+      folderRow.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer }));
+      folderRow.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+    })()`);
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.deepEqual(moveRequests.at(-1), { source: 'C:\\Elsewhere\\recent.md', destination: 'C:\\Archive' });
 
     console.log('Electron reader smoke test passed');
     window.destroy();

@@ -1,5 +1,6 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell } = require('electron');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const path = require('node:path');
 
 let mainWindow;
@@ -323,9 +324,9 @@ async function deleteWorkspaceEntry(target) {
   }
 }
 
-async function moveWorkspaceEntry(source, destinationDirectory, { allowRecent = false } = {}) {
+async function moveWorkspaceEntry(source, destinationDirectory, { allowRecent = false, allowExternalDestination = false } = {}) {
   const recentSource = allowRecent && isRecentFile(source);
-  const validDestination = allowRecent
+  const validDestination = allowExternalDestination
     ? typeof destinationDirectory === 'string' && path.isAbsolute(destinationDirectory)
     : isWorkspaceRootOrInside(destinationDirectory);
   if ((!isInsideWorkspace(source) && !recentSource) || !validDestination) {
@@ -404,7 +405,10 @@ async function chooseMoveDestination(source) {
     dialog.showErrorBox('Нельзя переместить', `Выберите папку на диске ${workspaceNameForPath(workspaceRoot)}.`);
     return false;
   }
-  return moveWorkspaceEntry(source, result.filePaths[0], { allowRecent: recentSource });
+  return moveWorkspaceEntry(source, result.filePaths[0], {
+    allowRecent: recentSource,
+    allowExternalDestination: recentSource,
+  });
 }
 
 function workspaceNameForPath(target) {
@@ -604,7 +608,26 @@ ipcMain.handle('workspace:select-root', () => selectWorkspaceRoot());
 ipcMain.handle('workspace:select-drive', (_event, drivePath) => selectWorkspaceDrive(drivePath));
 ipcMain.handle('workspace:create-folder', (_event, name) => createWorkspaceFolder(name));
 ipcMain.handle('workspace:delete-entry', (_event, target) => deleteWorkspaceEntry(target));
-ipcMain.handle('workspace:move-entry', (_event, source, destination) => moveWorkspaceEntry(source, destination));
+ipcMain.handle('workspace:move-entry', (_event, source, destination) => (
+  moveWorkspaceEntry(source, destination, { allowRecent: isRecentFile(source) })
+));
+ipcMain.on('workspace:start-file-drag', (event, source) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents || typeof source !== 'string' || !path.isAbsolute(source)) return;
+  const resolvedSource = path.resolve(source);
+  if ((!isInsideWorkspace(resolvedSource) && !isRecentFile(resolvedSource)) || !isSupportedFilePath(resolvedSource)) return;
+  try {
+    if (!fsSync.statSync(resolvedSource).isFile()) return;
+    const iconPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'drag-icon.png')
+      : path.join(__dirname, 'build', 'icon.png');
+    const dragIcon = nativeImage.createFromPath(iconPath).resize({ width: 32, height: 32 });
+    event.sender.startDrag({ file: resolvedSource, icon: dragIcon });
+  } catch {
+    // The source may disappear while the drag gesture is starting.
+  } finally {
+    if (!event.sender.isDestroyed()) event.sender.send('workspace:file-drag-ended');
+  }
+});
 ipcMain.handle('workspace:choose-move-destination', (_event, source) => chooseMoveDestination(source));
 ipcMain.handle('workspace:remove-recent', (_event, filePath) => removeRecentFile(filePath));
 ipcMain.handle('workspace:children', (_event, directory) => readWorkspaceDirectory(directory));

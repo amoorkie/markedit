@@ -25,7 +25,7 @@ const config = {
   host: 'mainApp',
   text: '',
   theme: 'github-light',
-  fontFace: { family: 'Cascadia Mono' },
+  fontFace: { family: 'JetBrains Mono' },
   fontSize: 16,
   showLineNumbers: true,
   showActiveLineIndicator: true,

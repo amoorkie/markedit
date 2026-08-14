@@ -25,6 +25,7 @@ import {
 import { createSectionTree, sectionSource } from './section-model.mjs';
 
 const STORAGE_KEY = 'markedit-windows-appearance-v1';
+const WORKSPACE_DRAG_TYPE = 'application/x-markedit-workspace-path';
 const DEFAULT_SETTINGS = {
   scheme: 'system',
   accent: '#1769aa',
@@ -56,9 +57,14 @@ const ICONS = {
 };
 const FONT_FAMILIES = {
   system: 'Segoe UI, system-ui, sans-serif',
-  serif: 'Charter, Georgia, Cambria, serif',
-  mono: 'Cascadia Mono, Consolas, monospace',
+  serif: 'Zen Antique, Georgia, serif',
+  mono: 'JetBrains Mono, Consolas, monospace',
 };
+const FONT_OPTIONS = [
+  { value: 'serif', label: 'С засечками' },
+  { value: 'system', label: 'Системный' },
+  { value: 'mono', label: 'Моноширинный' },
+];
 
 let settings = loadSettings();
 let mode = 'read';
@@ -74,6 +80,7 @@ let workspaceTitle;
 let draggedWorkspacePath;
 let recentFilesOpen = false;
 let driveMenuOpen = false;
+let fontMenuOpen = false;
 let renderedWorkspaceRoot;
 const expandedWorkspacePaths = new Set();
 
@@ -188,17 +195,17 @@ function createInterface() {
           `).join('')}
         </div>
       </div>
-      <label class="setting-group">
+      <div class="setting-group">
         <span class="setting-label">Шрифт чтения</span>
-        <span class="select-control">
-          <select id="font-control">
-            <option value="serif">С засечками</option>
-            <option value="system">Системный</option>
-            <option value="mono">Моноширинный</option>
-          </select>
-          ${icon('chevron-down', 16)}
-        </span>
-      </label>
+        <div class="font-picker">
+          <button id="font-toggle" type="button" aria-haspopup="listbox" aria-controls="font-menu" aria-expanded="false">
+            <span id="font-label">С засечками</span>${icon('chevron-down', 16)}
+          </button>
+          <div id="font-menu" class="font-menu" role="listbox" aria-label="Шрифт чтения" hidden>
+            ${FONT_OPTIONS.map(option => `<button class="font-option" type="button" role="option" data-font="${option.value}" aria-selected="false"><span>${option.label}</span>${icon('check', 15)}</button>`).join('')}
+          </div>
+        </div>
+      </div>
       <label class="setting-group range-setting">
         <span class="setting-label">Размер текста <output id="font-size-output"></output></span>
         <input id="font-size-control" type="range" min="15" max="24" step="1">
@@ -228,6 +235,7 @@ function createInterface() {
 }
 
 function bindInterface() {
+  window.windowsHost.onFileDragEnded(clearWorkspaceDragState);
   editButton.addEventListener('click', async () => {
     if (mode === 'read') {
       await setMode('edit');
@@ -249,6 +257,26 @@ function bindInterface() {
     syncRecentFilesAccordion();
   });
   document.getElementById('workspace-drive-toggle').addEventListener('click', () => setDriveMenuOpen(!driveMenuOpen));
+  document.getElementById('font-toggle').addEventListener('click', () => setFontMenuOpen(!fontMenuOpen));
+  document.getElementById('font-menu').addEventListener('click', event => {
+    const option = event.target.closest('[data-font]');
+    if (!option) return;
+    updateSetting('font', option.dataset.font);
+    setFontMenuOpen(false);
+    document.getElementById('font-toggle').focus({ preventScroll: true });
+  });
+  document.getElementById('font-menu').addEventListener('keydown', event => {
+    const options = [...document.querySelectorAll('.font-option')];
+    const current = options.indexOf(document.activeElement);
+    let next;
+    if (event.key === 'ArrowDown') next = Math.min(options.length - 1, current + 1);
+    if (event.key === 'ArrowUp') next = Math.max(0, current - 1);
+    if (event.key === 'Home') next = 0;
+    if (event.key === 'End') next = options.length - 1;
+    if (next === undefined) return;
+    event.preventDefault();
+    options[next].focus();
+  });
   const driveControl = document.querySelector('.workspace-drive-control');
   bindWorkspaceDropTarget(driveControl, () => renderedWorkspaceRoot);
   bindWorkspaceDropTarget(workspaceTree, () => renderedWorkspaceRoot, { backgroundOnly: true });
@@ -259,6 +287,7 @@ function bindInterface() {
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !settingsPanel.hidden) setSettingsOpen(false);
     if (event.key === 'Escape' && driveMenuOpen) setDriveMenuOpen(false);
+    if (event.key === 'Escape' && fontMenuOpen) setFontMenuOpen(false);
     if (event.key === 'Escape') closeWorkspaceContextMenu();
   });
   document.addEventListener('pointerdown', event => {
@@ -266,6 +295,7 @@ function bindInterface() {
       setSettingsOpen(false);
     }
     if (driveMenuOpen && !event.target.closest('.workspace-drive-picker')) setDriveMenuOpen(false);
+    if (fontMenuOpen && !event.target.closest('.font-picker')) setFontMenuOpen(false);
     if (!event.target.closest('#workspace-context-menu')) closeWorkspaceContextMenu();
   });
   workspaceTree.addEventListener('scroll', closeWorkspaceContextMenu, { passive: true });
@@ -278,7 +308,6 @@ function bindInterface() {
     const button = event.target.closest('[data-accent]');
     if (button) updateSetting('accent', button.dataset.accent);
   });
-  document.getElementById('font-control').addEventListener('change', event => updateSetting('font', event.target.value));
   document.getElementById('font-size-control').addEventListener('input', event => updateSetting('fontSize', Number(event.target.value)));
   document.getElementById('line-height-control').addEventListener('input', event => updateSetting('lineHeight', Number(event.target.value)));
   document.getElementById('width-control').addEventListener('input', event => updateSetting('contentWidth', Number(event.target.value)));
@@ -302,8 +331,8 @@ function bindWorkspaceDropTarget(element, destinationPath, { backgroundOnly = fa
     event.preventDefault();
     event.stopPropagation();
     element.classList.remove('drop-target');
-    const source = draggedWorkspacePath || event.dataTransfer.getData('text/plain');
-    draggedWorkspacePath = undefined;
+    const source = draggedWorkspacePath || event.dataTransfer.getData(WORKSPACE_DRAG_TYPE) || event.dataTransfer.getData('text/plain');
+    clearWorkspaceDragState();
     const destination = destinationPath();
     if (!source || !destination) return;
     element.classList.add('loading');
@@ -313,6 +342,33 @@ function bindWorkspaceDropTarget(element, destinationPath, { backgroundOnly = fa
       element.classList.remove('loading');
     }
   });
+}
+
+function clearWorkspaceDragState() {
+  draggedWorkspacePath = undefined;
+  document.querySelectorAll('.workspace-row.dragging, .workspace-row.drop-target').forEach(row => {
+    row.classList.remove('dragging', 'drop-target');
+  });
+  document.querySelectorAll('.workspace-drive-control.drop-target, .workspace-tree.drop-target').forEach(target => {
+    target.classList.remove('drop-target');
+  });
+}
+
+function bindWorkspaceDragSource(row, entry) {
+  row.draggable = true;
+  row.addEventListener('dragstart', event => {
+    draggedWorkspacePath = entry.path;
+    row.classList.add('dragging');
+    if (entry.type === 'file') {
+      event.preventDefault();
+      window.windowsHost.startFileDrag(entry.path);
+      return;
+    }
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData(WORKSPACE_DRAG_TYPE, entry.path);
+    event.dataTransfer.setData('text/plain', entry.path);
+  });
+  row.addEventListener('dragend', clearWorkspaceDragState);
 }
 
 function bindCreateFileButton(button) {
@@ -343,7 +399,11 @@ function syncSettingsControls() {
   settingsPanel.querySelectorAll('[data-accent]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.accent === settings.accent));
   });
-  document.getElementById('font-control').value = settings.font;
+  const fontOption = FONT_OPTIONS.find(option => option.value === settings.font) ?? FONT_OPTIONS[0];
+  document.getElementById('font-label').textContent = fontOption.label;
+  settingsPanel.querySelectorAll('[data-font]').forEach(option => {
+    option.setAttribute('aria-selected', String(option.dataset.font === fontOption.value));
+  });
   document.getElementById('font-size-control').value = settings.fontSize;
   document.getElementById('font-size-output').value = `${settings.fontSize}px`;
   document.getElementById('line-height-control').value = settings.lineHeight;
@@ -355,7 +415,18 @@ function syncSettingsControls() {
 function setSettingsOpen(open) {
   settingsPanel.hidden = !open;
   settingsButton.setAttribute('aria-expanded', String(open));
-  if (open) document.getElementById('font-control').focus({ preventScroll: true });
+  if (!open) setFontMenuOpen(false);
+  if (open) document.getElementById('font-toggle').focus({ preventScroll: true });
+}
+
+function setFontMenuOpen(open) {
+  fontMenuOpen = open;
+  const toggle = document.getElementById('font-toggle');
+  const menu = document.getElementById('font-menu');
+  menu.hidden = !open;
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.classList.toggle('open', open);
+  if (open) menu.querySelector('[aria-selected="true"]')?.focus({ preventScroll: true });
 }
 
 async function setWorkspaceOpen(open) {
@@ -465,6 +536,7 @@ function renderRecentFiles(files, currentFile) {
       row.title = entry.path;
       row.classList.toggle('selected', entry.path.toLowerCase() === currentFile?.toLowerCase());
       row.innerHTML = `<span class="workspace-spacer"></span>${icon('file-text', 15)}<span>${escapeText(entry.name)}</span>`;
+      bindWorkspaceDragSource(row, entry);
       row.addEventListener('click', async () => {
         document.querySelectorAll('.workspace-row.selected').forEach(selected => selected.classList.remove('selected'));
         row.classList.add('selected');
@@ -624,20 +696,8 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
   row.type = 'button';
   row.className = 'workspace-row';
   row.style.setProperty('--workspace-depth', depth);
-  row.draggable = true;
   row.addEventListener('contextmenu', event => showWorkspaceContextMenu(event, entry));
-  row.addEventListener('dragstart', event => {
-    draggedWorkspacePath = entry.path;
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', entry.path);
-    row.classList.add('dragging');
-  });
-  row.addEventListener('dragend', () => {
-    draggedWorkspacePath = undefined;
-    row.classList.remove('dragging');
-    document.querySelectorAll('.workspace-row.drop-target').forEach(target => target.classList.remove('drop-target'));
-    document.querySelectorAll('.workspace-drive-control.drop-target, .workspace-tree.drop-target').forEach(target => target.classList.remove('drop-target'));
-  });
+  bindWorkspaceDragSource(row, entry);
   item.append(row);
 
   if (entry.type === 'file') {
@@ -697,22 +757,30 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
   row.addEventListener('dragover', event => {
     if (!draggedWorkspacePath || draggedWorkspacePath.toLowerCase() === entry.path.toLowerCase()) return;
     event.preventDefault();
+    event.stopPropagation();
     event.dataTransfer.dropEffect = 'move';
+    document.querySelectorAll('.workspace-row.drop-target').forEach(target => {
+      if (target !== row) target.classList.remove('drop-target');
+    });
     row.classList.add('drop-target');
   });
   row.addEventListener('dragleave', event => {
+    event.stopPropagation();
     if (!row.contains(event.relatedTarget)) row.classList.remove('drop-target');
   });
   row.addEventListener('drop', async event => {
     event.preventDefault();
     event.stopPropagation();
     row.classList.remove('drop-target');
-    const source = draggedWorkspacePath || event.dataTransfer.getData('text/plain');
-    draggedWorkspacePath = undefined;
+    const source = draggedWorkspacePath || event.dataTransfer.getData(WORKSPACE_DRAG_TYPE) || event.dataTransfer.getData('text/plain');
+    clearWorkspaceDragState();
     if (!source) return;
     row.classList.add('loading');
     try {
-      if (await window.windowsHost.moveWorkspaceEntry(source, entry.path)) await refreshWorkspace();
+      if (await window.windowsHost.moveWorkspaceEntry(source, entry.path)) {
+        expandedWorkspacePaths.add(entry.path.toLowerCase());
+        await refreshWorkspace();
+      }
     } finally {
       row.classList.remove('loading');
     }
@@ -785,11 +853,15 @@ function renderSection(section) {
       createIcons({ icons: ICONS });
     }, 1400);
   });
-  element.append(copyButton);
-
   const ownContent = document.createElement('div');
   ownContent.className = 'section-content';
   setSanitizedMarkdown(ownContent, section.tokens.map(token => token.raw ?? '').join(''));
+  const heading = ownContent.querySelector(':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6');
+  if (heading) {
+    heading.append(copyButton);
+  } else {
+    ownContent.prepend(copyButton);
+  }
   element.append(ownContent);
   section.children.forEach(child => element.append(renderSection(child)));
   createIcons({ icons: ICONS });
