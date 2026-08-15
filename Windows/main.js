@@ -234,6 +234,12 @@ async function workspaceSnapshot() {
   };
 }
 
+async function revealActiveFile() {
+  if (!currentFile) return false;
+  await setWorkspaceRoot(path.dirname(currentFile));
+  return true;
+}
+
 async function selectWorkspaceDrive(drivePath) {
   const drives = await availableWorkspaceLocations();
   const drive = drives.find(entry => entry.path.toLowerCase() === String(drivePath).toLowerCase());
@@ -604,6 +610,7 @@ ipcMain.handle('clipboard:write', (_event, text) => {
 
 ipcMain.handle('document:save', () => saveDocument());
 ipcMain.handle('workspace:snapshot', () => workspaceSnapshot());
+ipcMain.handle('workspace:reveal-active', () => revealActiveFile());
 ipcMain.handle('workspace:select-root', () => selectWorkspaceRoot());
 ipcMain.handle('workspace:select-drive', (_event, drivePath) => selectWorkspaceDrive(drivePath));
 ipcMain.handle('workspace:create-folder', (_event, name) => createWorkspaceFolder(name));

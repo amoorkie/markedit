@@ -545,6 +545,51 @@ body {
   gap: 4px;
 }
 
+.workspace-active-file {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 14px;
+  border-bottom: 1px solid var(--reader-border);
+  background: color-mix(in srgb, var(--reader-accent) 5%, var(--reader-surface));
+}
+
+.workspace-active-file[hidden] {
+  display: none;
+}
+
+.workspace-active-details {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.workspace-active-details > span {
+  color: var(--reader-accent);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.workspace-active-details > strong {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--reader-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+#workspace-reveal-active {
+  color: var(--reader-accent);
+}
+
 .workspace-tree {
   overflow: auto;
   padding: 8px 6px 24px;

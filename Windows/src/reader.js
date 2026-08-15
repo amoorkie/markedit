@@ -11,6 +11,7 @@ import {
   FolderOpen,
   FolderInput,
   FolderPlus,
+  LocateFixed,
   Monitor,
   Moon,
   Pencil,
@@ -44,6 +45,7 @@ const ICONS = {
   FolderOpen,
   FolderInput,
   FolderPlus,
+  LocateFixed,
   Monitor,
   Moon,
   PanelLeft,
@@ -82,6 +84,7 @@ let recentFilesOpen = false;
 let driveMenuOpen = false;
 let fontMenuOpen = false;
 let renderedWorkspaceRoot;
+let lastWorkspaceCurrentFile;
 const expandedWorkspacePaths = new Set();
 
 function loadSettings() {
@@ -143,6 +146,15 @@ function createInterface() {
           </button>
         </div>
       </header>
+      <section id="workspace-active-file" class="workspace-active-file" aria-label="Активный файл" hidden>
+        <div class="workspace-active-details">
+          <span>Активный файл</span>
+          <strong id="workspace-active-path"></strong>
+        </div>
+        <button class="icon-button icon-button-small" id="workspace-reveal-active" type="button" title="Показать активный файл" aria-label="Показать активный файл">
+          ${icon('locate-fixed', 16)}
+        </button>
+      </section>
       <section class="workspace-recent">
         <button class="workspace-accordion" id="workspace-recent-toggle" type="button" aria-expanded="false" aria-controls="workspace-recent-list">
           ${icon('chevron-right', 14)}<span>Недавние</span>
@@ -257,6 +269,15 @@ function bindInterface() {
     syncRecentFilesAccordion();
   });
   document.getElementById('workspace-drive-toggle').addEventListener('click', () => setDriveMenuOpen(!driveMenuOpen));
+  document.getElementById('workspace-reveal-active').addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      if (await window.windowsHost.revealActiveFile()) await refreshWorkspace({ revealActive: true });
+    } finally {
+      button.disabled = false;
+    }
+  });
   document.getElementById('font-toggle').addEventListener('click', () => setFontMenuOpen(!fontMenuOpen));
   document.getElementById('font-menu').addEventListener('click', event => {
     const option = event.target.closest('[data-font]');
@@ -457,14 +478,18 @@ async function setMode(nextMode) {
   }
 }
 
-async function refreshWorkspace() {
+async function refreshWorkspace({ revealActive = false } = {}) {
   if (!workspaceTree || !window.windowsHost?.getWorkspace) return;
   const snapshot = await window.windowsHost.getWorkspace();
   workspaceTitle.textContent = snapshot.rootName ?? workspaceName(snapshot.root);
   workspaceTitle.title = snapshot.root;
   const rootChanged = renderedWorkspaceRoot?.toLowerCase() !== snapshot.root.toLowerCase();
   if (rootChanged) expandedWorkspacePaths.clear();
+  const activeChanged = workspacePathKey(lastWorkspaceCurrentFile) !== workspacePathKey(snapshot.currentFile);
+  const shouldRevealActive = Boolean(snapshot.currentFile) && (activeChanged || revealActive);
+  if (shouldRevealActive) expandActiveFilePath(snapshot.root, snapshot.currentFile);
   renderedWorkspaceRoot = snapshot.root;
+  syncActiveFile(snapshot.currentFile);
   const previousScrollTop = workspaceTree.scrollTop;
   workspaceTree.replaceChildren();
   renderDrivePicker(snapshot.drives, snapshot.root);
@@ -481,8 +506,41 @@ async function refreshWorkspace() {
     if (snapshot.truncated) list.append(workspaceMessage('Показаны первые 1000 элементов', 0));
   }
   workspaceTree.append(list);
-  if (!rootChanged) workspaceTree.scrollTop = previousScrollTop;
+  if (shouldRevealActive) {
+    workspaceTree.querySelector('.workspace-row.selected')?.scrollIntoView({ block: 'center' });
+  } else if (!rootChanged) {
+    workspaceTree.scrollTop = previousScrollTop;
+  }
+  lastWorkspaceCurrentFile = snapshot.currentFile;
   createIcons({ icons: ICONS });
+}
+
+function workspacePathKey(filePath) {
+  return typeof filePath === 'string'
+    ? filePath.replaceAll('/', '\\').replace(/\\+$/, '').toLowerCase()
+    : '';
+}
+
+function expandActiveFilePath(root, filePath) {
+  const rootKey = workspacePathKey(root);
+  let directory = filePath.replace(/[\\/][^\\/]+$/, '');
+  while (directory) {
+    const directoryKey = workspacePathKey(directory);
+    if (directoryKey === rootKey) break;
+    if (!directoryKey.startsWith(`${rootKey}\\`)) return;
+    expandedWorkspacePaths.add(directoryKey);
+    const parent = directory.replace(/[\\/][^\\/]+$/, '');
+    if (parent === directory) return;
+    directory = parent;
+  }
+}
+
+function syncActiveFile(filePath) {
+  const container = document.getElementById('workspace-active-file');
+  const pathLabel = document.getElementById('workspace-active-path');
+  container.hidden = !filePath;
+  pathLabel.textContent = filePath ?? '';
+  pathLabel.title = filePath ?? '';
 }
 
 function renderDrivePicker(drives, selectedDrive) {
@@ -626,6 +684,11 @@ function showWorkspaceContextMenu(event, entry, { recent = false } = {}) {
       run: () => window.windowsHost.openWorkspaceFile(entry.path),
     });
   }
+  actions.push({
+    label: 'Копировать путь',
+    icon: 'copy',
+    run: () => window.windowsHost.copyText(entry.path),
+  });
   if (recent) {
     actions.push({
       label: 'Переместить…',

@@ -5,6 +5,7 @@ const { app, BrowserWindow, clipboard, ipcMain } = require('electron');
 
 const projectDirectory = path.resolve(__dirname, '..');
 let openedWorkspaceFile;
+let revealActiveRequests = 0;
 const moveRequests = [];
 
 ipcMain.handle('clipboard:write', (_event, text) => clipboard.writeText(text));
@@ -18,7 +19,7 @@ ipcMain.handle('workspace:snapshot', () => ({
     { name: 'C:', path: 'C:\\' },
     { name: 'D:', path: 'D:\\' },
   ],
-  currentFile: 'C:\\reader-demo.md',
+  currentFile: 'C:\\Archive\\old.md',
   recentFiles: [{ type: 'file', name: 'recent.md', path: 'C:\\Elsewhere\\recent.md' }],
   entries: [
     { type: 'directory', name: 'Archive', path: 'C:\\Archive' },
@@ -32,6 +33,10 @@ ipcMain.handle('workspace:children', (_event, directory) => ({
 }));
 ipcMain.handle('workspace:select-root', () => false);
 ipcMain.handle('workspace:select-drive', () => false);
+ipcMain.handle('workspace:reveal-active', () => {
+  revealActiveRequests += 1;
+  return true;
+});
 ipcMain.handle('workspace:create-folder', () => false);
 ipcMain.handle('workspace:delete-entry', () => false);
 ipcMain.handle('workspace:move-entry', (_event, source, destination) => {
@@ -179,6 +184,11 @@ app.whenReady().then(async () => {
       recentAccordion: Boolean(document.getElementById('workspace-recent-toggle')),
       recentFiles: document.querySelectorAll('.workspace-recent-row').length,
       selectChevron: document.querySelector('#font-toggle svg')?.classList.contains('lucide-chevron-down'),
+      activePath: document.getElementById('workspace-active-path').textContent,
+      activeVisible: !document.getElementById('workspace-active-file').hidden,
+      revealIcon: document.querySelector('#workspace-reveal-active svg')?.classList.contains('lucide-locate-fixed'),
+      activeExpanded: [...document.querySelectorAll('#workspace-tree .workspace-row')]
+        .find(row => row.title === 'C:\\\\Archive')?.getAttribute('aria-expanded'),
     })`);
     assert.deepEqual(workspaceState, {
       open: true,
@@ -186,18 +196,26 @@ app.whenReady().then(async () => {
       sidebarDisplay: 'flex',
       toggleDisplay: 'none',
       title: 'C:',
-      files: 2,
+      files: 3,
       driveOptions: 4,
       selectedDrive: 'C:',
       desktopOption: 'Рабочий стол',
       recentBeforeDrive: true,
       newFolder: true,
-      deleteButtons: 2,
-      draggableRows: 3,
+      deleteButtons: 3,
+      draggableRows: 4,
       recentAccordion: true,
       recentFiles: 1,
       selectChevron: true,
+      activePath: 'C:\\Archive\\old.md',
+      activeVisible: true,
+      revealIcon: true,
+      activeExpanded: 'true',
     });
+
+    await window.webContents.executeJavaScript("document.getElementById('workspace-reveal-active').click()");
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.equal(revealActiveRequests, 1);
 
     await window.webContents.executeJavaScript("document.getElementById('workspace-recent-toggle').click()");
     const recentOpenState = await window.webContents.executeJavaScript(`({
@@ -217,7 +235,11 @@ app.whenReady().then(async () => {
     const recentMenuActions = await window.webContents.executeJavaScript(
       "[...document.querySelectorAll('.workspace-context-action')].map(button => button.textContent.trim())",
     );
-    assert.deepEqual(recentMenuActions, ['Открыть', 'Переместить…', 'Убрать из недавних']);
+    assert.deepEqual(recentMenuActions, ['Открыть', 'Копировать путь', 'Переместить…', 'Убрать из недавних']);
+    clipboard.clear();
+    await window.webContents.executeJavaScript("document.querySelectorAll('.workspace-context-action')[1].click()");
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.equal(clipboard.readText(), 'C:\\Elsewhere\\recent.md');
     assert.match(
       await window.webContents.executeJavaScript("getComputedStyle(document.getElementById('workspace-context-menu')).fontFamily"),
       /Segoe UI/,
@@ -233,7 +255,7 @@ app.whenReady().then(async () => {
     })`);
     assert.deepEqual(contextMenuState, {
       open: true,
-      actions: ['Открыть', 'Переместить…', 'Удалить'],
+      actions: ['Открыть', 'Копировать путь', 'Переместить…', 'Удалить'],
       danger: 1,
     });
     await window.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
@@ -242,8 +264,6 @@ app.whenReady().then(async () => {
       true,
     );
 
-    await window.webContents.executeJavaScript("document.querySelector('#workspace-tree .workspace-row[aria-expanded]').click()");
-    await new Promise(resolve => setTimeout(resolve, 50));
     assert.equal(
       await window.webContents.executeJavaScript("document.querySelector('#workspace-tree .workspace-row[aria-expanded]').getAttribute('aria-expanded')"),
       'true',
