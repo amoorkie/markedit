@@ -6,10 +6,12 @@ const { app, BrowserWindow, clipboard, ipcMain } = require('electron');
 const projectDirectory = path.resolve(__dirname, '..');
 let openedWorkspaceFile;
 let revealActiveRequests = 0;
+let currentDocumentPath;
 const moveRequests = [];
 
 ipcMain.handle('clipboard:write', (_event, text) => clipboard.writeText(text));
 ipcMain.handle('document:save', () => true);
+ipcMain.handle('document:path', () => currentDocumentPath);
 ipcMain.handle('workspace:snapshot', () => ({
   root: 'C:\\',
   rootName: 'C:',
@@ -66,6 +68,23 @@ app.whenReady().then(async () => {
 
   try {
     await window.loadFile(path.join(projectDirectory, 'editor.html'));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const startState = await window.webContents.executeJavaScript(`({
+      heading: document.querySelector('.reader-start h1')?.textContent,
+      createButton: document.querySelector('.reader-start-primary')?.textContent.trim(),
+      explorerButton: document.querySelector('.reader-start-secondary')?.textContent.trim(),
+      recentFiles: document.querySelectorAll('.reader-start-file').length,
+      tocDisabled: document.getElementById('toc-button').disabled,
+    })`);
+    assert.deepEqual(startState, {
+      heading: 'MarkEdit',
+      createButton: 'Новый файл',
+      explorerButton: 'Проводник',
+      recentFiles: 1,
+      tocDisabled: true,
+    });
+
+    currentDocumentPath = 'C:\\Archive\\old.md';
     const sample = await fs.readFile(
       path.join(projectDirectory, 'tests', 'fixtures', 'reader-demo.md'),
       'utf8',
@@ -81,6 +100,10 @@ app.whenReady().then(async () => {
       editorHidden: document.getElementById('editor').hidden,
       copyButtons: document.querySelectorAll('.section-copy').length,
       inlineCopyButtons: document.querySelectorAll('h1 > .section-copy, h2 > .section-copy, h3 > .section-copy, h4 > .section-copy, h5 > .section-copy, h6 > .section-copy').length,
+      breadcrumb: document.querySelector('.reader-breadcrumb')?.textContent,
+      breadcrumbSegments: document.querySelectorAll('.reader-breadcrumb span').length,
+      tocButton: Boolean(document.getElementById('toc-button')),
+      tocEntries: document.querySelectorAll('.toc-entry').length,
       readOnly: window.config.readOnlyMode,
     })`);
     assert.deepEqual(readingState, {
@@ -89,6 +112,10 @@ app.whenReady().then(async () => {
       editorHidden: true,
       copyButtons: 4,
       inlineCopyButtons: 4,
+      breadcrumb: 'C:Archiveold.md',
+      breadcrumbSegments: 3,
+      tocButton: true,
+      tocEntries: 4,
       readOnly: true,
     });
     await window.webContents.executeJavaScript("document.getElementById('appearance-button').click()");
@@ -132,6 +159,23 @@ app.whenReady().then(async () => {
       loaded: true,
     });
     await window.webContents.executeJavaScript("document.getElementById('appearance-close').click()");
+
+    await window.webContents.executeJavaScript("document.getElementById('toc-button').click()");
+    const tocState = await window.webContents.executeJavaScript(`({
+      open: !document.getElementById('toc-panel').hidden,
+      expanded: document.getElementById('toc-button').getAttribute('aria-expanded'),
+      labels: [...document.querySelectorAll('.toc-entry')].map(button => button.textContent),
+    })`);
+    assert.deepEqual(tocState, {
+      open: true,
+      expanded: 'true',
+      labels: ['Product notes', 'Reading mode', 'Semantic sections', 'Theme controls'],
+    });
+    await window.webContents.executeJavaScript("document.querySelectorAll('.toc-entry')[1].click()");
+    assert.equal(
+      await window.webContents.executeJavaScript("document.getElementById('toc-panel').hidden"),
+      true,
+    );
 
     clipboard.clear();
     await window.webContents.executeJavaScript("document.querySelectorAll('.section-copy')[1].click()");
@@ -177,16 +221,19 @@ app.whenReady().then(async () => {
       driveOptions: document.querySelectorAll('.workspace-drive-option').length,
       selectedDrive: document.getElementById('workspace-drive-label').textContent,
       desktopOption: document.querySelector('.workspace-drive-option')?.textContent.trim(),
-      recentBeforeDrive: Boolean(document.querySelector('.workspace-recent + .workspace-drive-control')),
+      recentBeforeFiles: Boolean(document.querySelector('.workspace-recent + .workspace-files')),
+      filesAccordion: Boolean(document.getElementById('workspace-files-toggle')),
+      filesExpanded: document.getElementById('workspace-files-toggle').getAttribute('aria-expanded'),
       newFolder: Boolean(document.getElementById('workspace-new-folder')),
       deleteButtons: document.querySelectorAll('.workspace-delete').length,
       draggableRows: document.querySelectorAll('.workspace-row[draggable="true"]').length,
       recentAccordion: Boolean(document.getElementById('workspace-recent-toggle')),
       recentFiles: document.querySelectorAll('.workspace-recent-row').length,
       selectChevron: document.querySelector('#font-toggle svg')?.classList.contains('lucide-chevron-down'),
-      activePath: document.getElementById('workspace-active-path').textContent,
-      activeVisible: !document.getElementById('workspace-active-file').hidden,
+      activePanel: Boolean(document.getElementById('workspace-active-file')),
       revealIcon: document.querySelector('#workspace-reveal-active svg')?.classList.contains('lucide-locate-fixed'),
+      revealBesideDrive: Boolean(document.querySelector('.workspace-files-content .workspace-drive-control > #workspace-reveal-active')),
+      driveWord: document.querySelector('.workspace-drive-control > span')?.textContent,
       activeExpanded: [...document.querySelectorAll('#workspace-tree .workspace-row')]
         .find(row => row.title === 'C:\\\\Archive')?.getAttribute('aria-expanded'),
     })`);
@@ -200,16 +247,19 @@ app.whenReady().then(async () => {
       driveOptions: 4,
       selectedDrive: 'C:',
       desktopOption: 'Рабочий стол',
-      recentBeforeDrive: true,
+      recentBeforeFiles: true,
+      filesAccordion: true,
+      filesExpanded: 'true',
       newFolder: true,
       deleteButtons: 3,
       draggableRows: 4,
       recentAccordion: true,
       recentFiles: 1,
       selectChevron: true,
-      activePath: 'C:\\Archive\\old.md',
-      activeVisible: true,
+      activePanel: false,
       revealIcon: true,
+      revealBesideDrive: true,
+      driveWord: undefined,
       activeExpanded: 'true',
     });
 
@@ -217,12 +267,21 @@ app.whenReady().then(async () => {
     await new Promise(resolve => setTimeout(resolve, 25));
     assert.equal(revealActiveRequests, 1);
 
+    await window.webContents.executeJavaScript("document.getElementById('workspace-files-toggle').click()");
+    const filesClosedState = await window.webContents.executeJavaScript(`({
+      expanded: document.getElementById('workspace-files-toggle').getAttribute('aria-expanded'),
+      hidden: document.getElementById('workspace-files-content').hidden,
+    })`);
+    assert.deepEqual(filesClosedState, { expanded: 'false', hidden: true });
+    await window.webContents.executeJavaScript("document.getElementById('workspace-files-toggle').click()");
+
     await window.webContents.executeJavaScript("document.getElementById('workspace-recent-toggle').click()");
     const recentOpenState = await window.webContents.executeJavaScript(`({
       expanded: document.getElementById('workspace-recent-toggle').getAttribute('aria-expanded'),
       hidden: document.getElementById('workspace-recent-list').hidden,
+      overflowY: getComputedStyle(document.getElementById('workspace-recent-list')).overflowY,
     })`);
-    assert.deepEqual(recentOpenState, { expanded: 'true', hidden: false });
+    assert.deepEqual(recentOpenState, { expanded: 'true', hidden: false, overflowY: 'auto' });
     await window.webContents.executeJavaScript("document.querySelector('.workspace-recent-row').click()");
     await new Promise(resolve => setTimeout(resolve, 25));
     assert.equal(openedWorkspaceFile, 'C:\\Elsewhere\\recent.md');

@@ -12,6 +12,7 @@ import {
   FolderInput,
   FolderPlus,
   LocateFixed,
+  ListTree,
   Monitor,
   Moon,
   Pencil,
@@ -46,6 +47,7 @@ const ICONS = {
   FolderInput,
   FolderPlus,
   LocateFixed,
+  ListTree,
   Monitor,
   Moon,
   PanelLeft,
@@ -75,16 +77,20 @@ let readerContent;
 let editButton;
 let settingsButton;
 let settingsPanel;
+let tocButton;
+let tocPanel;
 let workspaceButton;
 let workspaceSidebar;
 let workspaceTree;
 let workspaceTitle;
 let draggedWorkspacePath;
 let recentFilesOpen = false;
+let workspaceFilesOpen = true;
 let driveMenuOpen = false;
 let fontMenuOpen = false;
 let renderedWorkspaceRoot;
 let lastWorkspaceCurrentFile;
+let readerHeadingIndex = 0;
 const expandedWorkspacePaths = new Set();
 
 function loadSettings() {
@@ -146,36 +152,39 @@ function createInterface() {
           </button>
         </div>
       </header>
-      <section id="workspace-active-file" class="workspace-active-file" aria-label="Активный файл" hidden>
-        <div class="workspace-active-details">
-          <span>Активный файл</span>
-          <strong id="workspace-active-path"></strong>
-        </div>
-        <button class="icon-button icon-button-small" id="workspace-reveal-active" type="button" title="Показать активный файл" aria-label="Показать активный файл">
-          ${icon('locate-fixed', 16)}
-        </button>
-      </section>
       <section class="workspace-recent">
         <button class="workspace-accordion" id="workspace-recent-toggle" type="button" aria-expanded="false" aria-controls="workspace-recent-list">
           ${icon('chevron-right', 14)}<span>Недавние</span>
         </button>
         <ul id="workspace-recent-list" class="workspace-list workspace-recent-list" hidden></ul>
       </section>
-      <div class="workspace-drive-control">
-        <span>Диск</span>
-        <div class="workspace-drive-picker">
-          <button id="workspace-drive-toggle" type="button" aria-label="Выбрать диск" aria-haspopup="listbox" aria-expanded="false">
-            <span id="workspace-drive-label">—</span>${icon('chevron-down', 14)}
-          </button>
-          <div id="workspace-drive-menu" class="workspace-drive-menu" role="listbox" aria-label="Диски" hidden></div>
+      <section class="workspace-files">
+        <button class="workspace-accordion workspace-files-toggle" id="workspace-files-toggle" type="button" aria-expanded="true" aria-controls="workspace-files-content">
+          ${icon('chevron-down', 14)}<span>Файлы</span>
+        </button>
+        <div id="workspace-files-content" class="workspace-files-content">
+          <div class="workspace-drive-control">
+            <button class="icon-button icon-button-small" id="workspace-reveal-active" type="button" title="Показать активный файл" aria-label="Показать активный файл">
+              ${icon('locate-fixed', 16)}
+            </button>
+            <div class="workspace-drive-picker">
+              <button id="workspace-drive-toggle" type="button" aria-label="Выбрать диск" aria-haspopup="listbox" aria-expanded="false">
+                <span id="workspace-drive-label">—</span>${icon('chevron-down', 14)}
+              </button>
+              <div id="workspace-drive-menu" class="workspace-drive-menu" role="listbox" aria-label="Диски" hidden></div>
+            </div>
+          </div>
+          <nav id="workspace-tree" class="workspace-tree" aria-label="Файлы"></nav>
         </div>
-      </div>
-      <nav id="workspace-tree" class="workspace-tree" aria-label="Файлы"></nav>
+      </section>
     </aside>
     <div id="workspace-context-menu" class="workspace-context-menu" role="menu" aria-label="Действия с файлом" hidden></div>
     <div class="floating-controls" aria-label="Управление документом">
       <button class="icon-button" id="new-file-button" type="button" title="Новый Markdown-файл" aria-label="Создать Markdown-файл">
         ${icon('plus')}
+      </button>
+      <button class="icon-button" id="toc-button" type="button" title="Оглавление" aria-label="Открыть оглавление" aria-expanded="false">
+        ${icon('list-tree')}
       </button>
       <button class="icon-button" id="appearance-button" type="button" title="Оформление" aria-label="Оформление" aria-expanded="false">
         ${icon('settings')}
@@ -231,6 +240,15 @@ function createInterface() {
         <input id="width-control" type="range" min="560" max="980" step="20">
       </label>
     </section>
+    <section id="toc-panel" class="appearance-panel toc-panel" aria-label="Оглавление" hidden>
+      <header class="appearance-header">
+        <h2>Оглавление</h2>
+        <button class="icon-button icon-button-small" id="toc-close" type="button" title="Закрыть" aria-label="Закрыть оглавление">
+          ${icon('x', 16)}
+        </button>
+      </header>
+      <nav id="toc-list" class="toc-list" aria-label="Заголовки документа"></nav>
+    </section>
   `);
 
   reader = document.getElementById('reader');
@@ -238,6 +256,8 @@ function createInterface() {
   editButton = document.getElementById('edit-button');
   settingsButton = document.getElementById('appearance-button');
   settingsPanel = document.getElementById('appearance-panel');
+  tocButton = document.getElementById('toc-button');
+  tocPanel = document.getElementById('toc-panel');
   workspaceButton = document.getElementById('workspace-button');
   workspaceSidebar = document.getElementById('workspace-sidebar');
   workspaceTree = document.getElementById('workspace-tree');
@@ -263,10 +283,16 @@ function bindInterface() {
   });
   settingsButton.addEventListener('click', () => setSettingsOpen(settingsPanel.hidden));
   document.getElementById('appearance-close').addEventListener('click', () => setSettingsOpen(false));
+  tocButton.addEventListener('click', () => setTocOpen(tocPanel.hidden));
+  document.getElementById('toc-close').addEventListener('click', () => setTocOpen(false));
   workspaceButton.addEventListener('click', () => setWorkspaceOpen(true));
   document.getElementById('workspace-recent-toggle').addEventListener('click', () => {
     recentFilesOpen = !recentFilesOpen;
     syncRecentFilesAccordion();
+  });
+  document.getElementById('workspace-files-toggle').addEventListener('click', () => {
+    workspaceFilesOpen = !workspaceFilesOpen;
+    syncWorkspaceFilesAccordion();
   });
   document.getElementById('workspace-drive-toggle').addEventListener('click', () => setDriveMenuOpen(!driveMenuOpen));
   document.getElementById('workspace-reveal-active').addEventListener('click', async event => {
@@ -307,6 +333,7 @@ function bindInterface() {
   document.getElementById('workspace-close').addEventListener('click', () => setWorkspaceOpen(false));
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !settingsPanel.hidden) setSettingsOpen(false);
+    if (event.key === 'Escape' && !tocPanel.hidden) setTocOpen(false);
     if (event.key === 'Escape' && driveMenuOpen) setDriveMenuOpen(false);
     if (event.key === 'Escape' && fontMenuOpen) setFontMenuOpen(false);
     if (event.key === 'Escape') closeWorkspaceContextMenu();
@@ -314,6 +341,9 @@ function bindInterface() {
   document.addEventListener('pointerdown', event => {
     if (!settingsPanel.hidden && !settingsPanel.contains(event.target) && !settingsButton.contains(event.target)) {
       setSettingsOpen(false);
+    }
+    if (!tocPanel.hidden && !tocPanel.contains(event.target) && !tocButton.contains(event.target)) {
+      setTocOpen(false);
     }
     if (driveMenuOpen && !event.target.closest('.workspace-drive-picker')) setDriveMenuOpen(false);
     if (fontMenuOpen && !event.target.closest('.font-picker')) setFontMenuOpen(false);
@@ -434,10 +464,18 @@ function syncSettingsControls() {
 }
 
 function setSettingsOpen(open) {
+  if (open) setTocOpen(false);
   settingsPanel.hidden = !open;
   settingsButton.setAttribute('aria-expanded', String(open));
   if (!open) setFontMenuOpen(false);
   if (open) document.getElementById('font-toggle').focus({ preventScroll: true });
+}
+
+function setTocOpen(open) {
+  if (open) setSettingsOpen(false);
+  tocPanel.hidden = !open;
+  tocButton.setAttribute('aria-expanded', String(open));
+  if (open) tocPanel.querySelector('.toc-entry')?.focus({ preventScroll: true });
 }
 
 function setFontMenuOpen(open) {
@@ -460,6 +498,7 @@ async function setWorkspaceOpen(open) {
 async function setMode(nextMode) {
   mode = nextMode;
   const editing = mode === 'edit';
+  if (editing) setTocOpen(false);
   document.documentElement.classList.toggle('editing-mode', editing);
   document.documentElement.classList.toggle('reading-mode', !editing);
   reader.hidden = editing;
@@ -469,7 +508,9 @@ async function setMode(nextMode) {
   editButton.title = editing ? 'Сохранить' : 'Редактировать';
   editButton.innerHTML = icon(editing ? 'check' : 'pencil');
   createIcons({ icons: ICONS });
-  window.webModules.config.setReadOnlyMode({ enabled: !editing });
+  if (typeof window.editor?.dispatch === 'function') {
+    window.webModules.config.setReadOnlyMode({ enabled: !editing });
+  }
   if (editing) {
     window.editor?.focus();
   } else {
@@ -489,7 +530,7 @@ async function refreshWorkspace({ revealActive = false } = {}) {
   const shouldRevealActive = Boolean(snapshot.currentFile) && (activeChanged || revealActive);
   if (shouldRevealActive) expandActiveFilePath(snapshot.root, snapshot.currentFile);
   renderedWorkspaceRoot = snapshot.root;
-  syncActiveFile(snapshot.currentFile);
+  document.getElementById('workspace-reveal-active').disabled = !snapshot.currentFile;
   const previousScrollTop = workspaceTree.scrollTop;
   workspaceTree.replaceChildren();
   renderDrivePicker(snapshot.drives, snapshot.root);
@@ -533,14 +574,6 @@ function expandActiveFilePath(root, filePath) {
     if (parent === directory) return;
     directory = parent;
   }
-}
-
-function syncActiveFile(filePath) {
-  const container = document.getElementById('workspace-active-file');
-  const pathLabel = document.getElementById('workspace-active-path');
-  container.hidden = !filePath;
-  pathLabel.textContent = filePath ?? '';
-  pathLabel.title = filePath ?? '';
 }
 
 function renderDrivePicker(drives, selectedDrive) {
@@ -614,6 +647,17 @@ function syncRecentFilesAccordion() {
   list.hidden = !recentFilesOpen;
   toggle.setAttribute('aria-expanded', String(recentFilesOpen));
   toggle.innerHTML = `${icon(recentFilesOpen ? 'chevron-down' : 'chevron-right', 14)}<span>Недавние</span>`;
+  createIcons({ icons: ICONS });
+}
+
+function syncWorkspaceFilesAccordion() {
+  const toggle = document.getElementById('workspace-files-toggle');
+  const content = document.getElementById('workspace-files-content');
+  const section = toggle.closest('.workspace-files');
+  content.hidden = !workspaceFilesOpen;
+  toggle.setAttribute('aria-expanded', String(workspaceFilesOpen));
+  section.classList.toggle('collapsed', !workspaceFilesOpen);
+  toggle.innerHTML = `${icon(workspaceFilesOpen ? 'chevron-down' : 'chevron-right', 14)}<span>Файлы</span>`;
   createIcons({ icons: ICONS });
 }
 
@@ -870,12 +914,87 @@ function escapeText(value) {
   return element.innerHTML;
 }
 
+async function renderStartScreen() {
+  let recentFiles = [];
+  try {
+    recentFiles = (await window.windowsHost.getWorkspace()).recentFiles ?? [];
+  } catch {
+    recentFiles = [];
+  }
+
+  const start = document.createElement('section');
+  start.className = 'reader-start';
+  start.innerHTML = `
+    <div class="reader-start-mark">${icon('file-text', 28)}</div>
+    <div class="reader-start-heading">
+      <h1>MarkEdit</h1>
+      <p>Откройте недавний файл или создайте новый Markdown-документ.</p>
+    </div>
+    <div class="reader-start-actions">
+      <button class="reader-start-primary" type="button">${icon('plus', 16)}<span>Новый файл</span></button>
+      <button class="reader-start-secondary" type="button">${icon('panel-left', 16)}<span>Проводник</span></button>
+    </div>
+    <div class="reader-start-recents">
+      <h2>Недавние файлы</h2>
+      <div class="reader-start-list"></div>
+    </div>
+  `;
+
+  bindCreateFileButton(start.querySelector('.reader-start-primary'));
+  start.querySelector('.reader-start-secondary').addEventListener('click', () => setWorkspaceOpen(true));
+  const list = start.querySelector('.reader-start-list');
+  if (recentFiles.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'reader-start-empty';
+    empty.textContent = 'Пока здесь пусто.';
+    list.append(empty);
+  } else {
+    for (const entry of recentFiles.slice(0, 8)) {
+      const button = document.createElement('button');
+      const directory = entry.path.replace(/[\\/][^\\/]+$/, '');
+      button.type = 'button';
+      button.className = 'reader-start-file';
+      button.title = entry.path;
+      button.innerHTML = `${icon('file-text', 17)}<span><strong>${escapeText(entry.name)}</strong><small>${escapeText(directory)}</small></span>${icon('chevron-right', 15)}`;
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          await window.windowsHost.openWorkspaceFile(entry.path);
+        } finally {
+          button.disabled = false;
+        }
+      });
+      list.append(button);
+    }
+  }
+
+  readerContent.append(start);
+  createIcons({ icons: ICONS });
+}
+
 async function refreshReader() {
   if (!readerContent || !window.webModules?.core) return;
-  if (mode === 'read') window.webModules.config.setReadOnlyMode({ enabled: true });
+  const currentFilePath = await window.windowsHost.getCurrentFilePath();
+  if (!currentFilePath) {
+    readerContent.replaceChildren();
+    readerContent.classList.add('reader-content-start');
+    readerHeadingIndex = 0;
+    tocButton.disabled = true;
+    document.getElementById('toc-list').replaceChildren();
+    setTocOpen(false);
+    await renderStartScreen();
+    return;
+  }
+  if (mode === 'read' && typeof window.editor?.dispatch === 'function') {
+    window.webModules.config.setReadOnlyMode({ enabled: true });
+  }
   const text = window.webModules.core.getEditorText();
   const root = createSectionTree(marked.lexer(text, { gfm: true }));
   readerContent.replaceChildren();
+  readerContent.classList.remove('reader-content-start');
+  readerHeadingIndex = 0;
+  tocButton.disabled = false;
+  renderFileBreadcrumb(currentFilePath);
 
   if (root.tokens.length > 0) {
     const preamble = document.createElement('div');
@@ -884,6 +1003,7 @@ async function refreshReader() {
     readerContent.append(preamble);
   }
   root.children.forEach(section => readerContent.append(renderSection(section)));
+  renderTableOfContents();
   createIcons({ icons: ICONS });
 
   if (root.tokens.length === 0 && root.children.length === 0) {
@@ -892,6 +1012,56 @@ async function refreshReader() {
     empty.textContent = 'Пустой документ';
     readerContent.append(empty);
   }
+}
+
+function renderFileBreadcrumb(filePath) {
+  if (!filePath) return;
+  const parts = filePath.split(/[\\/]+/).filter(Boolean);
+  if (parts.length === 0) return;
+  const breadcrumb = document.createElement('nav');
+  breadcrumb.className = 'reader-breadcrumb';
+  breadcrumb.setAttribute('aria-label', 'Расположение файла');
+  breadcrumb.title = filePath;
+  const visibleParts = parts.length > 5
+    ? [parts[0], '…', ...parts.slice(-3)]
+    : parts;
+  visibleParts.forEach((part, index) => {
+    if (index > 0) breadcrumb.insertAdjacentHTML('beforeend', icon('chevron-right', 13));
+    const segment = document.createElement('span');
+    segment.className = index === visibleParts.length - 1 ? 'current' : '';
+    segment.textContent = part;
+    breadcrumb.append(segment);
+  });
+  readerContent.append(breadcrumb);
+}
+
+function renderTableOfContents() {
+  const list = document.getElementById('toc-list');
+  list.replaceChildren();
+  const headings = [...readerContent.querySelectorAll('.section-content > h1, .section-content > h2, .section-content > h3, .section-content > h4, .section-content > h5, .section-content > h6')];
+  if (headings.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'toc-empty';
+    empty.textContent = 'В документе нет заголовков';
+    list.append(empty);
+    return;
+  }
+  list.append(...headings.map(heading => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'toc-entry';
+    button.style.setProperty('--toc-depth', Number(heading.tagName.slice(1)) - 1);
+    button.textContent = heading.dataset.tocTitle || 'Без названия';
+    button.title = button.textContent;
+    button.addEventListener('click', () => {
+      setTocOpen(false);
+      heading.scrollIntoView({
+        block: 'start',
+        behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      });
+    });
+    return button;
+  }));
 }
 
 function renderSection(section) {
@@ -921,6 +1091,8 @@ function renderSection(section) {
   setSanitizedMarkdown(ownContent, section.tokens.map(token => token.raw ?? '').join(''));
   const heading = ownContent.querySelector(':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6');
   if (heading) {
+    heading.id = `reader-heading-${readerHeadingIndex++}`;
+    heading.dataset.tocTitle = heading.textContent.trim();
     heading.append(copyButton);
   } else {
     ownContent.prepend(copyButton);
