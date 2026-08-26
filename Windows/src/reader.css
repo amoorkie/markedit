@@ -80,6 +80,159 @@ body {
   overflow-wrap: anywhere;
 }
 
+#reader-content.reader-content-start {
+  display: grid;
+  min-height: 100vh;
+  align-content: center;
+  padding-top: 64px;
+  padding-bottom: 64px;
+}
+
+.reader-start {
+  display: grid;
+  gap: 22px;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+}
+
+.reader-start-mark {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--reader-accent) 32%, var(--reader-border));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--reader-accent) 11%, transparent);
+  color: var(--reader-accent);
+}
+
+#reader-content .reader-start-heading h1 {
+  margin: 0 0 7px;
+  font-size: 30px;
+  letter-spacing: -.02em;
+}
+
+#reader-content .reader-start-heading p {
+  max-width: 540px;
+  margin: 0;
+  color: var(--reader-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.reader-start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reader-start-actions button {
+  display: inline-flex;
+  height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid var(--reader-border);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reader-start-actions button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--reader-accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.reader-start-primary {
+  border-color: var(--reader-accent) !important;
+  background: var(--reader-accent);
+  color: white;
+}
+
+.reader-start-secondary {
+  background: var(--reader-surface);
+  color: var(--reader-text);
+}
+
+.reader-start-secondary:hover {
+  background: var(--reader-surface-hover);
+}
+
+.reader-start-recents {
+  display: grid;
+  max-width: 660px;
+  gap: 8px;
+}
+
+#reader-content .reader-start-recents h2 {
+  margin: 0;
+  color: var(--reader-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.reader-start-list {
+  display: grid;
+  gap: 3px;
+}
+
+.reader-start-file {
+  display: grid;
+  width: 100%;
+  min-height: 48px;
+  grid-template-columns: 20px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--reader-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.reader-start-file:hover,
+.reader-start-file:focus-visible {
+  background: var(--reader-surface-hover);
+  color: var(--reader-text);
+  outline: none;
+}
+
+.reader-start-file > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.reader-start-file strong,
+.reader-start-file small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-start-file strong {
+  color: var(--reader-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.reader-start-file small {
+  color: var(--reader-muted);
+  font-size: 10px;
+}
+
+#reader-content .reader-start-empty {
+  margin: 8px 0;
+  color: var(--reader-muted);
+  font-size: 12px;
+}
+
 #reader-content ::selection {
   background: var(--reader-selection);
 }
@@ -107,8 +260,40 @@ body {
 #reader-content > .reader-section:first-child h1:first-child,
 #reader-content > .reader-section:first-child h2:first-child,
 #reader-content > .reader-section:first-child h3:first-child,
+.reader-breadcrumb + .reader-section h1:first-child,
+.reader-breadcrumb + .reader-section h2:first-child,
+.reader-breadcrumb + .reader-section h3:first-child,
 .reader-preamble > :first-child {
   margin-top: 0;
+}
+
+.reader-breadcrumb {
+  display: flex;
+  overflow: hidden;
+  align-items: center;
+  gap: 3px;
+  margin: 0 0 14px;
+  color: var(--reader-muted);
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.reader-breadcrumb svg {
+  flex: 0 0 auto;
+  opacity: .62;
+}
+
+.reader-breadcrumb span {
+  overflow: hidden;
+  min-width: 0;
+  max-width: 180px;
+  text-overflow: ellipsis;
+}
+
+.reader-breadcrumb span.current {
+  color: var(--reader-text);
 }
 
 #reader-content p,
@@ -477,6 +662,59 @@ body {
   accent-color: var(--reader-accent);
 }
 
+.toc-panel {
+  display: flex;
+  max-height: min(70vh, 620px);
+  flex-direction: column;
+  padding: 14px;
+}
+
+.toc-panel[hidden] {
+  display: none;
+}
+
+.toc-panel .appearance-header {
+  margin: 0 2px 10px 6px;
+}
+
+.toc-list {
+  overflow: auto;
+  min-height: 0;
+  padding: 2px;
+}
+
+.toc-entry {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px 0 calc(8px + var(--toc-depth) * 11px);
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--reader-muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.toc-entry:hover,
+.toc-entry:focus-visible {
+  background: var(--reader-surface-hover);
+  color: var(--reader-text);
+  outline: none;
+}
+
+.toc-empty {
+  margin: 8px;
+  color: var(--reader-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .editing-mode #editor {
   display: block;
 }
@@ -487,6 +725,10 @@ body {
 
 .editing-mode .cm-scroller {
   padding-top: 52px;
+}
+
+.editing-mode #toc-button {
+  display: none;
 }
 
 .workspace-sidebar {
@@ -545,63 +787,53 @@ body {
   gap: 4px;
 }
 
-.workspace-active-file {
-  display: grid;
-  flex: 0 0 auto;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 8px 8px 14px;
-  border-bottom: 1px solid var(--reader-border);
-  background: color-mix(in srgb, var(--reader-accent) 5%, var(--reader-surface));
-}
-
-.workspace-active-file[hidden] {
-  display: none;
-}
-
-.workspace-active-details {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.workspace-active-details > span {
-  color: var(--reader-accent);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-
-.workspace-active-details > strong {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--reader-muted);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
 #workspace-reveal-active {
   color: var(--reader-accent);
 }
 
 .workspace-tree {
+  min-height: 0;
+  flex: 1 1 auto;
   overflow: auto;
   padding: 8px 6px 24px;
+}
+
+.workspace-files {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.workspace-files.collapsed {
+  flex: 0 0 auto;
+}
+
+.workspace-files-toggle {
+  flex: 0 0 auto;
+  width: calc(100% - 12px);
+  margin: 5px 6px;
+}
+
+.workspace-files-content {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  border-top: 1px solid var(--reader-border);
+}
+
+.workspace-files-content[hidden] {
+  display: none;
 }
 
 .workspace-drive-control {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 7px 12px;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--reader-border);
   color: var(--reader-muted);
   font-size: 11px;
@@ -625,11 +857,12 @@ body {
 
 .workspace-drive-picker {
   position: relative;
+  flex: 1;
 }
 
 .workspace-drive-picker > button {
   display: grid;
-  width: 122px;
+  width: 100%;
   height: 26px;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -666,7 +899,7 @@ body {
   z-index: 20;
   top: calc(100% + 4px);
   right: 0;
-  width: 150px;
+  width: 100%;
   box-sizing: border-box;
   padding: 4px;
   border: 1px solid var(--reader-border);
@@ -739,7 +972,11 @@ body {
 }
 
 .workspace-recent-list {
+  max-height: min(34vh, 260px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding-bottom: 4px;
+  scrollbar-gutter: stable;
 }
 
 .workspace-recent-row {

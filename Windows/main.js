@@ -7,6 +7,7 @@ let mainWindow;
 let currentFile;
 let workspaceRoot;
 let recentFiles = [];
+const MAX_RECENT_FILES = 50;
 let dirty = false;
 let forceClose = false;
 
@@ -95,7 +96,7 @@ async function loadWorkspaceRoot() {
   try {
     const saved = JSON.parse(await fs.readFile(workspaceStatePath(), 'utf8'));
     recentFiles = Array.isArray(saved.recentFiles)
-      ? saved.recentFiles.filter(file => typeof file === 'string' && isSupportedFilePath(file)).slice(0, 12)
+      ? saved.recentFiles.filter(file => typeof file === 'string' && isSupportedFilePath(file)).slice(0, MAX_RECENT_FILES)
       : [];
     if (typeof saved.root === 'string' && path.isAbsolute(saved.root)) {
       await fs.access(saved.root);
@@ -134,15 +135,16 @@ async function importSystemRecentFiles() {
       }
     }));
   const systemFiles = candidates.filter(Boolean).sort((left, right) => right.mtimeMs - left.mtimeMs).map(entry => entry.target);
-  recentFiles = [...systemFiles, ...recentFiles].filter((file, index, files) => (
+  recentFiles = [...recentFiles, ...systemFiles].filter((file, index, files) => (
     files.findIndex(candidate => candidate.toLowerCase() === file.toLowerCase()) === index
-  )).slice(0, 12);
+  )).slice(0, MAX_RECENT_FILES);
   await rememberWorkspaceRoot();
 }
 
 async function recordRecentFile(filePath) {
   const resolved = path.resolve(filePath);
-  recentFiles = [resolved, ...recentFiles.filter(file => file.toLowerCase() !== resolved.toLowerCase())].slice(0, 12);
+  const alreadyListed = recentFiles.some(file => file.toLowerCase() === resolved.toLowerCase());
+  if (!alreadyListed) recentFiles = [resolved, ...recentFiles].slice(0, MAX_RECENT_FILES);
   app.addRecentDocument(resolved);
   await rememberWorkspaceRoot();
 }
@@ -609,6 +611,7 @@ ipcMain.handle('clipboard:write', (_event, text) => {
 });
 
 ipcMain.handle('document:save', () => saveDocument());
+ipcMain.handle('document:path', () => currentFile);
 ipcMain.handle('workspace:snapshot', () => workspaceSnapshot());
 ipcMain.handle('workspace:reveal-active', () => revealActiveFile());
 ipcMain.handle('workspace:select-root', () => selectWorkspaceRoot());
