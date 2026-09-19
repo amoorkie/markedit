@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide';
 import { createSectionTree, sectionSource } from './section-model.mjs';
+import { installTextContextMenu } from './text-context-menu.js';
 
 const STORAGE_KEY = 'markedit-windows-appearance-v1';
 const WORKSPACE_DRAG_TYPE = 'application/x-markedit-workspace-path';
@@ -72,6 +73,7 @@ const FONT_OPTIONS = [
 
 let settings = loadSettings();
 let mode = 'read';
+let closeTextContextMenu = () => {};
 let reader;
 let readerContent;
 let editButton;
@@ -496,6 +498,7 @@ async function setWorkspaceOpen(open) {
 }
 
 async function setMode(nextMode) {
+  closeTextContextMenu();
   mode = nextMode;
   const editing = mode === 'edit';
   if (editing) setTocOpen(false);
@@ -1111,6 +1114,14 @@ function setSanitizedMarkdown(element, source) {
 
 async function initialize() {
   createInterface();
+  closeTextContextMenu = installTextContextMenu({
+    isEditing: () => mode === 'edit',
+    closeOtherMenus: () => {
+      closeWorkspaceContextMenu();
+      setDriveMenuOpen(false);
+      setFontMenuOpen(false);
+    },
+  });
   applySettings();
   document.documentElement.classList.add('markedit-ready');
   await setMode('read');
@@ -1118,6 +1129,7 @@ async function initialize() {
 }
 
 async function documentChanged() {
+  closeTextContextMenu();
   await Promise.all([refreshReader(), refreshWorkspace()]);
 }
 

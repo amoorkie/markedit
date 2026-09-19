@@ -10,6 +10,10 @@ let currentDocumentPath;
 const moveRequests = [];
 
 ipcMain.handle('clipboard:write', (_event, text) => clipboard.writeText(text));
+ipcMain.handle('clipboard:read', async () => {
+  await new Promise(resolve => setTimeout(resolve, 30));
+  return clipboard.readText();
+});
 ipcMain.handle('document:save', () => true);
 ipcMain.handle('document:path', () => currentDocumentPath);
 ipcMain.handle('workspace:snapshot', () => ({
@@ -376,6 +380,7 @@ app.whenReady().then(async () => {
     await new Promise(resolve => setTimeout(resolve, 25));
     assert.deepEqual(moveRequests.at(-1), { source: 'C:\\Elsewhere\\recent.md', destination: 'C:\\Archive' });
 
+    await require('./text-context-smoke.cjs')(window, clipboard);
     console.log('Electron reader smoke test passed');
     window.destroy();
     app.quit();

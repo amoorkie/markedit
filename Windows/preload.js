@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('windowsHost', {
   copyText: text => ipcRenderer.invoke('clipboard:write', text),
+  readClipboardText: () => ipcRenderer.invoke('clipboard:read'),
+  markDocumentDirty: () => ipcRenderer.send('editor:dirty'),
   saveDocument: () => ipcRenderer.invoke('document:save'),
   getCurrentFilePath: () => ipcRenderer.invoke('document:path'),
   getWorkspace: () => ipcRenderer.invoke('workspace:snapshot'),

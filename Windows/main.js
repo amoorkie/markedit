@@ -611,6 +611,7 @@ ipcMain.handle('clipboard:write', (_event, text) => {
 });
 
 ipcMain.handle('document:save', () => saveDocument());
+ipcMain.handle('clipboard:read', () => clipboard.readText());
 ipcMain.handle('document:path', () => currentFile);
 ipcMain.handle('workspace:snapshot', () => workspaceSnapshot());
 ipcMain.handle('workspace:reveal-active', () => revealActiveFile());
