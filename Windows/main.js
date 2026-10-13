@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
 const { DocumentWorkspace } = require('./document-workspace.cjs');
+const { fileKey, workspaceRootForDirectory } = require('./platform.cjs');
 
 let mainWindow;
 let currentFile;
@@ -12,6 +13,16 @@ const MAX_RECENT_FILES = 50;
 let dirty = false;
 let forceClose = false;
 let closingWindow = false;
+let documentsReady = false;
+const pendingOpenFiles = [];
+
+// Finder может передать файл до запуска окна; очередь сохраняет такие открытия.
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  if (!isSupportedFilePath(filePath)) return;
+  if (documentsReady) { mainWindow.show(); void openDocument(filePath); }
+  else pendingOpenFiles.push(filePath);
+});
 
 if (process.env.MARKEDIT_DEV_USER_DATA) {
   app.setPath('userData', process.env.MARKEDIT_DEV_USER_DATA);
@@ -67,8 +78,9 @@ async function rememberWorkspaceRoot() {
   await fs.writeFile(workspaceStatePath(), JSON.stringify({ root: workspaceRoot, recentFiles }), 'utf8');
 }
 
+// На Mac открываем папку файла, чтобы не показывать системный корень вместо документов.
 async function setWorkspaceRoot(directory) {
-  workspaceRoot = path.parse(path.resolve(directory)).root;
+  workspaceRoot = workspaceRootForDirectory(directory);
   await rememberWorkspaceRoot();
 }
 
@@ -87,15 +99,17 @@ async function loadWorkspaceRoot() {
       await fs.access(saved.root);
       const savedRoot = path.resolve(saved.root);
       const desktop = path.resolve(app.getPath('desktop'));
-      return savedRoot.toLowerCase() === desktop.toLowerCase() ? desktop : path.parse(savedRoot).root;
+      return fileKey(savedRoot) === fileKey(desktop) ? desktop : workspaceRootForDirectory(savedRoot);
     }
   } catch {
-    // Fall back to Documents when no saved folder is available.
+    // Без сохранённого расположения показываем документы пользователя.
   }
-  return path.parse(app.getPath('documents')).root;
+  return workspaceRootForDirectory(app.getPath('documents'));
 }
 
+// Системные ярлыки .lnk существуют только на Windows; тесты не читают личную историю.
 async function importSystemRecentFiles() {
+  if (process.platform !== 'win32' || process.env.MARKEDIT_DEV_USER_DATA) return;
   let shortcuts;
   try {
     shortcuts = await fs.readdir(app.getPath('recent'), { withFileTypes: true });
@@ -121,16 +135,16 @@ async function importSystemRecentFiles() {
     }));
   const systemFiles = candidates.filter(Boolean).sort((left, right) => right.mtimeMs - left.mtimeMs).map(entry => entry.target);
   recentFiles = [...recentFiles, ...systemFiles].filter((file, index, files) => (
-    files.findIndex(candidate => candidate.toLowerCase() === file.toLowerCase()) === index
+    files.findIndex(candidate => fileKey(candidate) === fileKey(file)) === index
   )).slice(0, MAX_RECENT_FILES);
   await rememberWorkspaceRoot();
 }
 
 async function recordRecentFile(filePath) {
   const resolved = path.resolve(filePath);
-  const alreadyListed = recentFiles.some(file => file.toLowerCase() === resolved.toLowerCase());
+  const alreadyListed = recentFiles.some(file => fileKey(file) === fileKey(resolved));
   if (!alreadyListed) recentFiles = [resolved, ...recentFiles].slice(0, MAX_RECENT_FILES);
-  app.addRecentDocument(resolved);
+  if (!process.env.MARKEDIT_DEV_USER_DATA) app.addRecentDocument(resolved);
   await rememberWorkspaceRoot();
 }
 
@@ -153,7 +167,7 @@ async function availableRecentFiles() {
 
 async function removeRecentFile(filePath) {
   if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new TypeError('Недопустимый путь');
-  recentFiles = recentFiles.filter(file => file.toLowerCase() !== path.resolve(filePath).toLowerCase());
+  recentFiles = recentFiles.filter(file => fileKey(file) !== fileKey(path.resolve(filePath)));
   await rememberWorkspaceRoot();
   return workspaceSnapshot();
 }
@@ -172,7 +186,7 @@ async function workspaceSnapshot() {
   if (!workspaceRoot) workspaceRoot = await loadWorkspaceRoot();
   const contents = await readWorkspaceDirectory(workspaceRoot);
   const locations = await availableWorkspaceLocations();
-  const selectedLocation = locations.find(entry => entry.path.toLowerCase() === workspaceRoot.toLowerCase());
+  const selectedLocation = locations.find(entry => fileKey(entry.path) === fileKey(workspaceRoot));
   return {
     root: workspaceRoot,
     rootName: selectedLocation?.name ?? workspaceNameForPath(workspaceRoot),
@@ -191,7 +205,7 @@ async function revealActiveFile() {
 
 async function selectWorkspaceDrive(drivePath) {
   const drives = await availableWorkspaceLocations();
-  const drive = drives.find(entry => entry.path.toLowerCase() === String(drivePath).toLowerCase());
+  const drive = drives.find(entry => fileKey(entry.path) === fileKey(String(drivePath)));
   if (!drive) throw new TypeError('Недопустимый диск');
   await setWorkspaceLocation(drive.path);
   return workspaceSnapshot();
@@ -218,14 +232,14 @@ function isInsideWorkspace(target) {
 function isWorkspaceRootOrInside(target) {
   return typeof target === 'string'
     && path.isAbsolute(target)
-    && (path.resolve(target).toLowerCase() === path.resolve(workspaceRoot).toLowerCase() || isInsideWorkspace(target));
+    && (fileKey(path.resolve(target)) === fileKey(path.resolve(workspaceRoot)) || isInsideWorkspace(target));
 }
 
 function isRecentFile(target) {
   return typeof target === 'string'
     && path.isAbsolute(target)
     && supportedExtensions.has(path.extname(target).toLowerCase())
-    && recentFiles.some(file => file.toLowerCase() === path.resolve(target).toLowerCase());
+    && recentFiles.some(file => fileKey(file) === fileKey(path.resolve(target)));
 }
 
 async function createWorkspaceFolder(name) {
@@ -266,7 +280,7 @@ async function deleteWorkspaceEntry(target) {
     cancelId: 1,
     title: 'Удаление',
     message: `Переместить «${path.basename(resolvedTarget)}» в корзину?`,
-    detail: 'Объект можно будет восстановить из корзины Windows.',
+    detail: 'Объект можно будет восстановить из корзины.',
   });
   if (answer.response !== 0) return false;
   try {
@@ -293,9 +307,9 @@ async function moveWorkspaceEntry(source, destinationDirectory, { allowRecent = 
   }
   const resolvedSource = path.resolve(source);
   const resolvedDestination = path.resolve(destinationDirectory);
-  const sourceKey = resolvedSource.toLowerCase();
-  const destinationKey = resolvedDestination.toLowerCase();
-  if (path.dirname(resolvedSource).toLowerCase() === destinationKey) return workspaceSnapshot();
+  const sourceKey = fileKey(resolvedSource);
+  const destinationKey = fileKey(resolvedDestination);
+  if (fileKey(path.dirname(resolvedSource)) === destinationKey) return workspaceSnapshot();
 
   try {
     const [sourceStats, destinationStats] = await Promise.all([
@@ -327,13 +341,13 @@ async function moveWorkspaceEntry(source, destinationDirectory, { allowRecent = 
     }
     await documents.moved(resolvedSource, target);
     recentFiles = recentFiles.map(file => {
-      const key = file.toLowerCase();
+      const key = fileKey(file);
       return key === sourceKey || key.startsWith(`${sourceKey}${path.sep}`)
         ? path.join(target, path.relative(resolvedSource, file))
         : file;
     });
     recentFiles = recentFiles.filter((file, index, files) => (
-      files.findIndex(candidate => candidate.toLowerCase() === file.toLowerCase()) === index
+      files.findIndex(candidate => fileKey(candidate) === fileKey(file)) === index
     ));
     await rememberWorkspaceRoot();
     return workspaceSnapshot();
@@ -363,8 +377,9 @@ async function chooseMoveDestination(source) {
   });
 }
 
+// Диск Windows подписывается буквой, папка macOS — собственным именем.
 function workspaceNameForPath(target) {
-  return path.parse(target).root.replace(/[\\/]+$/, '');
+  return process.platform === 'win32' ? path.parse(target).root.replace(/[\\/]+$/, '') : path.basename(target) || '/';
 }
 
 async function createWorkspaceFile() {
@@ -389,7 +404,12 @@ async function createWorkspaceFile() {
   }
 }
 
+// На Mac показываем подключённые тома, на Windows — доступные буквы дисков.
 async function availableDrives() {
+  if (process.platform !== 'win32') {
+    const volumes = await fs.readdir('/Volumes', { withFileTypes: true }).catch(() => []);
+    return volumes.filter(entry => entry.isDirectory()).map(entry => ({ name: entry.name, path: path.join('/Volumes', entry.name) }));
+  }
   const letters = Array.from({ length: 26 }, (_, index) => `${String.fromCharCode(65 + index)}:\\`);
   const drives = await Promise.all(letters.map(async drivePath => {
     try {
@@ -402,9 +422,15 @@ async function availableDrives() {
   return drives.filter(Boolean);
 }
 
+// Общие пользовательские папки Mac дополняют рабочий стол и доступные тома.
 async function availableWorkspaceLocations() {
   return [
     { name: 'Рабочий стол', path: path.resolve(app.getPath('desktop')), kind: 'desktop' },
+    ...(process.platform === 'darwin' ? [
+      { name: 'Документы', path: app.getPath('documents') },
+      { name: 'Загрузки', path: app.getPath('downloads') },
+      { name: 'Домашняя папка', path: app.getPath('home') },
+    ] : []),
     ...await availableDrives(),
   ];
 }
@@ -444,18 +470,20 @@ function isSupportedFilePath(filePath) {
     && supportedExtensions.has(path.extname(filePath).toLowerCase());
 }
 
+// Нативное меню использует Cmd на Mac и Ctrl на Windows; вкладки общие для обеих систем.
 function buildMenu() {
   return Menu.buildFromTemplate([
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
     {
       label: '&File',
       submenu: [
-        { label: '&New', accelerator: 'Ctrl+N', click: newDocument },
-        { label: '&Open...', accelerator: 'Ctrl+O', click: () => openDocument() },
+        { label: '&New', accelerator: 'CmdOrCtrl+N', click: newDocument },
+        { label: '&Open...', accelerator: 'CmdOrCtrl+O', click: () => openDocument() },
         { type: 'separator' },
-        { label: '&Save', accelerator: 'Ctrl+S', click: () => saveDocument() },
-        { label: 'Save &As...', accelerator: 'Ctrl+Shift+S', click: () => saveDocument(true) },
+        { label: '&Save', accelerator: 'CmdOrCtrl+S', click: () => saveDocument() },
+        { label: 'Save &As...', accelerator: 'CmdOrCtrl+Shift+S', click: () => saveDocument(true) },
         { type: 'separator' },
-        { label: 'E&xit', accelerator: 'Alt+F4', click: () => mainWindow.close() },
+        { label: 'E&xit', accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Alt+F4', click: () => mainWindow.close() },
       ],
     },
     {
@@ -481,8 +509,8 @@ function buildMenu() {
         { label: 'About MarkEdit', click: () => dialog.showMessageBox(mainWindow, {
           type: 'info',
           title: 'About MarkEdit',
-          message: 'MarkEdit for Windows',
-          detail: `Unofficial Windows host using MarkEdit CoreEditor\nVersion ${app.getVersion()}\nMIT License`,
+          message: 'MarkEdit',
+          detail: `Custom desktop interface using MarkEdit CoreEditor\nVersion ${app.getVersion()}\nMIT License`,
         }) },
       ],
     },
@@ -539,6 +567,8 @@ async function createWindow(initialFile) {
   await documents.run(() => documents.restore());
   if (initialFile) await openDocument(initialFile);
   else updateTitle();
+  documentsReady = true;
+  for (const filePath of pendingOpenFiles.splice(0)) await openDocument(filePath);
 }
 
 ipcMain.on('editor:dirty', (event, id) => {

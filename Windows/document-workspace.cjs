@@ -2,6 +2,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { fileKey } = require('./platform.cjs');
 
 const GROUP_COLORS = ['#1769aa', '#0f766e', '#68722c', '#9f3f5f', '#7656a8', '#bd682a'];
 
@@ -94,7 +95,7 @@ class DocumentWorkspace {
     }
     if (!this.supportsPath(filePath)) throw new TypeError('Неподдерживаемый путь документа');
     const resolved = path.resolve(filePath);
-    const existing = this.tabs.find(tab => tab.path?.toLowerCase() === resolved.toLowerCase());
+    const existing = this.tabs.find(tab => fileKey(tab.path) === fileKey(resolved));
     if (existing) return this.activate(existing.id);
     // Сначала чтение: исчезнувший файл не меняет текущий документ.
     const text = await fs.readFile(resolved, 'utf8');
@@ -131,7 +132,7 @@ class DocumentWorkspace {
       if (answer.canceled || !answer.filePath) return false;
       target = path.resolve(answer.filePath);
     }
-    if (this.tabs.some(item => item.id !== id && item.path?.toLowerCase() === target.toLowerCase())) {
+    if (this.tabs.some(item => item.id !== id && fileKey(item.path) === fileKey(target))) {
       throw new Error('Этот файл уже открыт в другой вкладке. Выберите другое имя.');
     }
     await fs.writeFile(target, tab.text, 'utf8');
@@ -224,9 +225,9 @@ class DocumentWorkspace {
 
   // Переименование/перенос в проводнике обновляет все открытые документы, включая неактивные.
   async moved(source, target) {
-    const key = source.toLowerCase();
+    const key = fileKey(source);
     for (const tab of this.tabs) {
-      if (tab.path && (tab.path.toLowerCase() === key || tab.path.toLowerCase().startsWith(`${key}${path.sep}`))) {
+      if (tab.path && (fileKey(tab.path) === key || fileKey(tab.path).startsWith(`${key}${path.sep}`))) {
         tab.path = path.join(target, path.relative(source, tab.path));
         tab.name = path.basename(tab.path);
       }
@@ -236,8 +237,8 @@ class DocumentWorkspace {
 
   // Защищает также неактивные документы от удаления вместе с родительской папкой.
   containsPath(target) {
-    const key = path.resolve(target).toLowerCase();
-    return this.tabs.some(tab => tab.path && (tab.path.toLowerCase() === key || tab.path.toLowerCase().startsWith(`${key}${path.sep}`)));
+    const key = fileKey(path.resolve(target));
+    return this.tabs.some(tab => tab.path && (fileKey(tab.path) === key || fileKey(tab.path).startsWith(`${key}${path.sep}`)));
   }
 
   // Восстановление терпимо к удалённым файлам и старым/повреждённым метаданным.
@@ -247,7 +248,7 @@ class DocumentWorkspace {
     if (saved?.version !== 1 || !Array.isArray(saved.tabs)) return;
     this.groups = (Array.isArray(saved.groups) ? saved.groups : []).filter(group => typeof group.id === 'string' && typeof group.name === 'string' && GROUP_COLORS.includes(group.color)).map(group => ({ id: group.id, name: group.name.slice(0, 80), color: group.color, collapsed: group.collapsed === true }));
     for (const item of saved.tabs) {
-      if (!this.supportsPath(item.path) || this.tabs.some(tab => tab.path.toLowerCase() === item.path.toLowerCase())) continue;
+      if (!this.supportsPath(item.path) || this.tabs.some(tab => fileKey(tab.path) === fileKey(item.path))) continue;
       try {
         const text = await fs.readFile(item.path, 'utf8');
         const tab = this.makeTab({ path: item.path, text, groupId: item.groupId });

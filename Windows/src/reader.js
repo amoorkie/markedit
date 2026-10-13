@@ -27,6 +27,7 @@ import {
 import { createSectionTree, sectionSource } from './section-model.mjs';
 import { installTextContextMenu } from './text-context-menu.js';
 import { installDocumentTabs } from './document-tabs.js';
+import { workspacePathKey, ancestorPaths } from './workspace-path.mjs';
 
 const STORAGE_KEY = 'markedit-windows-appearance-v1';
 const WORKSPACE_DRAG_TYPE = 'application/x-markedit-workspace-path';
@@ -535,7 +536,7 @@ async function refreshWorkspace({ revealActive = false } = {}) {
   if (version !== workspaceRefreshVersion) return;
   workspaceTitle.textContent = snapshot.rootName ?? workspaceName(snapshot.root);
   workspaceTitle.title = snapshot.root;
-  const rootChanged = renderedWorkspaceRoot?.toLowerCase() !== snapshot.root.toLowerCase();
+  const rootChanged = workspacePathKey(renderedWorkspaceRoot) !== workspacePathKey(snapshot.root);
   if (rootChanged) expandedWorkspacePaths.clear();
   const activeChanged = workspacePathKey(lastWorkspaceCurrentFile) !== workspacePathKey(snapshot.currentFile);
   const shouldRevealActive = Boolean(snapshot.currentFile) && (activeChanged || revealActive);
@@ -571,40 +572,25 @@ async function refreshWorkspace({ revealActive = false } = {}) {
   createIcons({ icons: ICONS });
 }
 
-function workspacePathKey(filePath) {
-  return typeof filePath === 'string'
-    ? filePath.replaceAll('/', '\\').replace(/\\+$/, '').toLowerCase()
-    : '';
-}
-
+// Нормализация учитывает обе системы и не смешивает файлы с разным регистром на Mac.
 function expandActiveFilePath(root, filePath) {
-  const rootKey = workspacePathKey(root);
-  let directory = filePath.replace(/[\\/][^\\/]+$/, '');
-  while (directory) {
-    const directoryKey = workspacePathKey(directory);
-    if (directoryKey === rootKey) break;
-    if (!directoryKey.startsWith(`${rootKey}\\`)) return;
-    expandedWorkspacePaths.add(directoryKey);
-    const parent = directory.replace(/[\\/][^\\/]+$/, '');
-    if (parent === directory) return;
-    directory = parent;
-  }
+  for (const directory of ancestorPaths(root, filePath)) expandedWorkspacePaths.add(directory);
 }
 
 function renderDrivePicker(drives, selectedDrive) {
   const menu = document.getElementById('workspace-drive-menu');
-  const selectedLocation = drives.find(drive => drive.path.toLowerCase() === selectedDrive.toLowerCase());
+  const selectedLocation = drives.find(drive => workspacePathKey(drive.path) === workspacePathKey(selectedDrive));
   document.getElementById('workspace-drive-label').textContent = selectedLocation?.name ?? workspaceName(selectedDrive);
   menu.replaceChildren(...drives.map(drive => {
     const option = document.createElement('button');
     option.type = 'button';
     option.className = 'workspace-drive-option';
     option.setAttribute('role', 'option');
-    option.setAttribute('aria-selected', String(drive.path.toLowerCase() === selectedDrive.toLowerCase()));
-    option.innerHTML = `<span>${escapeText(drive.name)}</span>${drive.path.toLowerCase() === selectedDrive.toLowerCase() ? icon('check', 14) : ''}`;
+    option.setAttribute('aria-selected', String(workspacePathKey(drive.path) === workspacePathKey(selectedDrive)));
+    option.innerHTML = `<span>${escapeText(drive.name)}</span>${workspacePathKey(drive.path) === workspacePathKey(selectedDrive) ? icon('check', 14) : ''}`;
     option.addEventListener('click', async () => {
       setDriveMenuOpen(false);
-      if (drive.path.toLowerCase() === renderedWorkspaceRoot?.toLowerCase()) return;
+      if (workspacePathKey(drive.path) === workspacePathKey(renderedWorkspaceRoot)) return;
       const toggle = document.getElementById('workspace-drive-toggle');
       toggle.disabled = true;
       try {
@@ -640,7 +626,7 @@ function renderRecentFiles(files, currentFile) {
       row.type = 'button';
       row.className = 'workspace-row workspace-recent-row';
       row.title = entry.path;
-      row.classList.toggle('selected', entry.path.toLowerCase() === currentFile?.toLowerCase());
+      row.classList.toggle('selected', workspacePathKey(entry.path) === workspacePathKey(currentFile));
       row.innerHTML = `<span class="workspace-spacer"></span>${icon('file-text', 15)}<span>${escapeText(entry.name)}</span>`;
       bindWorkspaceDragSource(row, entry);
       row.addEventListener('click', async () => {
@@ -825,7 +811,7 @@ async function renderWorkspaceEntry(entry, currentFile, depth, version = workspa
   if (entry.type === 'file') {
     row.innerHTML = `<span class="workspace-spacer"></span>${icon('file-text', 15)}<span>${escapeText(entry.name)}</span>`;
     row.title = entry.path;
-    row.classList.toggle('selected', entry.path.toLowerCase() === currentFile?.toLowerCase());
+    row.classList.toggle('selected', workspacePathKey(entry.path) === workspacePathKey(currentFile));
     row.addEventListener('click', async () => {
       workspaceSidebar.querySelectorAll('.workspace-row.selected').forEach(selected => selected.classList.remove('selected'));
       row.classList.add('selected');
@@ -853,7 +839,7 @@ async function renderWorkspaceEntry(entry, currentFile, depth, version = workspa
 
   const setExpanded = async nextExpanded => {
     expanded = nextExpanded;
-    const expansionKey = entry.path.toLowerCase();
+    const expansionKey = workspacePathKey(entry.path);
     if (expanded) expandedWorkspacePaths.add(expansionKey);
     else expandedWorkspacePaths.delete(expansionKey);
     updateRow();
@@ -880,7 +866,7 @@ async function renderWorkspaceEntry(entry, currentFile, depth, version = workspa
   };
 
   row.addEventListener('dragover', event => {
-    if (!draggedWorkspacePath || draggedWorkspacePath.toLowerCase() === entry.path.toLowerCase()) return;
+    if (!draggedWorkspacePath || workspacePathKey(draggedWorkspacePath) === workspacePathKey(entry.path)) return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = 'move';
@@ -903,7 +889,7 @@ async function renderWorkspaceEntry(entry, currentFile, depth, version = workspa
     row.classList.add('loading');
     try {
       if (await window.windowsHost.moveWorkspaceEntry(source, entry.path)) {
-        expandedWorkspacePaths.add(entry.path.toLowerCase());
+        expandedWorkspacePaths.add(workspacePathKey(entry.path));
         await refreshWorkspace();
       }
     } finally {
@@ -914,7 +900,7 @@ async function renderWorkspaceEntry(entry, currentFile, depth, version = workspa
   row.addEventListener('click', () => setExpanded(!expanded));
   addDeleteAction(item, entry);
   updateRow();
-  if (expandedWorkspacePaths.has(entry.path.toLowerCase())) await setExpanded(true);
+  if (expandedWorkspacePaths.has(workspacePathKey(entry.path))) await setExpanded(true);
   return item;
 }
 

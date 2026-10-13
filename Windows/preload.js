@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('windowsHost', {
+  // Платформа нужна интерфейсу для привычных сочетаний клавиш.
+  platform: process.platform,
   copyText: text => ipcRenderer.invoke('clipboard:write', text),
   readClipboardText: () => ipcRenderer.invoke('clipboard:read'),
   markDocumentDirty: () => ipcRenderer.send('editor:dirty', document.documentElement.dataset.documentId),

@@ -1,18 +1,12 @@
-# MarkEdit for Windows
+# MarkEdit desktop host
 
-This directory contains an unofficial Electron host for MarkEdit's original
-`CoreEditor`. It adds a default read-only view, Markdown section copying,
-theme customization, a collapsible file sidebar, Windows file dialogs,
-Markdown file associations, unsaved-change protection, and an NSIS installer.
+Эта папка содержит общий интерфейс Electron для Windows и macOS: чтение, редактор, контекстные меню, вкладки, группы, проводник и настройки. Имя папки и имя npm-пакета сохранены, чтобы обновления Windows продолжали использовать существующий профиль пользователя.
 
-## Build
+Инструкции по сборке и ссылки на установщики находятся в [основном README](../README.md).
 
-```powershell
-corepack yarn --cwd ..\CoreEditor install --immutable
-corepack yarn --cwd ..\CoreEditor build
-npm ci
-npm run test:windows
-npm run dist
-```
+- `npm run dist -- --publish never` — Windows x64, NSIS, папка `dist`.
+- `npm run dist:mac -- --arm64 --publish never` — Mac Apple Silicon, DMG/ZIP, папка `dist-mac`.
+- `npm run dist:mac -- --x64 --publish never` — Mac Intel, DMG/ZIP, папка `dist-mac`.
+- `npm run test:packaged -- <путь-к-exe-или-MacOS/MarkEdit>` — запуск собранного приложения с временным профилем, проверка вкладок, групп и сохранения.
 
-The installer is written to `dist`.
+Mac-сборки создаются на macOS и подписываются ad-hoc через `@electron/osx-sign`. Эта подпись не заменяет Developer ID и нотарификацию Apple. Исходная нативная версия в `MarkEditMac/` собирается отдельно существующим workflow.

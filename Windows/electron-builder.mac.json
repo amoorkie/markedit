@@ -1,0 +1,23 @@
+{
+  "extends": null,
+  "appId": "com.markedit.desktop",
+  "productName": "MarkEdit",
+  "artifactName": "MarkEdit-macOS-${version}-${arch}.${ext}",
+  "directories": { "output": "dist-mac", "buildResources": "build" },
+  "files": ["main.js", "document-workspace.cjs", "platform.cjs", "preload.js", "editor.html", "reader.js", "reader.css", "assets/**/*", "package.json"],
+  "extraResources": [
+    { "from": "../LICENSE", "to": "LICENSE.txt" },
+    { "from": "build/icon.png", "to": "drag-icon.png" }
+  ],
+  "mac": {
+    "target": ["dmg", "zip"],
+    "category": "public.app-category.productivity",
+    "icon": "build/icon.png",
+    "minimumSystemVersion": "12.0.0",
+    "hardenedRuntime": false,
+    "notarize": false,
+    "sign": "scripts/sign-mac.cjs"
+  },
+  "fileAssociations": [{ "ext": ["md", "markdown", "mdown", "mkd"], "name": "Markdown document", "role": "Editor" }],
+  "dmg": { "title": "MarkEdit" }
+}

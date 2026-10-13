@@ -1,0 +1,70 @@
+name: Desktop installers
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.x'
+      - name: Build and test shared editor
+        working-directory: CoreEditor
+        run: |
+          node .yarn/releases/yarn-4.17.1.cjs install --immutable
+          node .yarn/releases/yarn-4.17.1.cjs build
+          node .yarn/releases/yarn-4.17.1.cjs test
+      - name: Install desktop dependencies
+        working-directory: Windows
+        run: npm ci
+      - name: Test desktop interface on macOS
+        working-directory: Windows
+        run: |
+          npm run test:windows
+          npm run prepare-editor
+          npm run test:electron
+          npm run test:context-lifecycle
+          npm run test:tabs
+      - name: Build DMG and ZIP
+        working-directory: Windows
+        run: npm run dist:mac -- --${{ matrix.arch }} --publish never
+      - name: Verify signed application and packaged behavior
+        working-directory: Windows
+        env:
+          BUILD_ARCH: ${{ matrix.arch }}
+        run: |
+          APP_DIR="dist-mac/mac"
+          if [ "$BUILD_ARCH" = "arm64" ]; then APP_DIR="dist-mac/mac-arm64"; fi
+          codesign --verify --deep --strict --verbose=2 "$APP_DIR/MarkEdit.app"
+          file "$APP_DIR/MarkEdit.app/Contents/MacOS/MarkEdit"
+          npm run test:packaged -- "$APP_DIR/MarkEdit.app/Contents/MacOS/MarkEdit"
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: markedit-macos-${{ matrix.arch }}
+          path: |
+            Windows/dist-mac/*.dmg
+            Windows/dist-mac/*.zip
+          if-no-files-found: error
+      - name: Upload UI verification images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-tests-${{ matrix.arch }}
+          path: Windows/tests/artifacts/

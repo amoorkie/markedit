@@ -1,7 +1,7 @@
 {
   "name": "markedit-windows",
-  "version": "1.33.1-win.22",
-  "description": "Unofficial Windows host for the MarkEdit CoreEditor",
+  "version": "1.33.1-desktop.23",
+  "description": "Custom desktop interface for the MarkEdit CoreEditor",
   "main": "main.js",
   "author": "MarkEdit contributors",
   "license": "MIT",
@@ -12,13 +12,16 @@
     "test:context-lifecycle": "electron scripts/text-context-lifecycle.cjs",
     "test:tabs": "electron scripts/tabs-lifecycle.cjs && electron scripts/tabs-lifecycle.cjs --restore",
     "start": "electron .",
-    "dist": "npm run prepare-editor && electron-builder --win nsis --x64"
+    "dist": "npm run prepare-editor && electron-builder --win nsis --x64",
+    "dist:mac": "npm run prepare-editor && electron-builder --config electron-builder.mac.json --mac",
+    "test:packaged": "node scripts/packaged-smoke.mjs"
   },
   "devDependencies": {
+    "@electron/osx-sign": "1.3.1",
+    "dompurify": "3.4.13",
     "electron": "43.3.0",
     "electron-builder": "26.0.12",
     "esbuild": "0.28.1",
-    "dompurify": "3.4.13",
     "lucide": "1.30.0",
     "marked": "18.0.9"
   },
@@ -33,6 +36,7 @@
     "files": [
       "main.js",
       "document-workspace.cjs",
+      "platform.cjs",
       "preload.js",
       "editor.html",
       "reader.js",
@@ -54,7 +58,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.png"
@@ -70,7 +76,12 @@
     },
     "fileAssociations": [
       {
-        "ext": ["md", "markdown", "mdown", "mkd"],
+        "ext": [
+          "md",
+          "markdown",
+          "mdown",
+          "mkd"
+        ],
         "name": "Markdown document",
         "description": "Markdown document",
         "role": "Editor"

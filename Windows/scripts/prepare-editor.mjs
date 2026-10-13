@@ -39,7 +39,8 @@ const config = {
   suggestWhileTyping: false,
   autoCharacterPairs: true,
   indentBehavior: 'paragraph',
-  defaultLineBreak: '\r\n',
+  // Новые файлы используют переносы своей системы; существующие редактор сохраняет.
+  defaultLineBreak: process.platform === 'win32' ? '\r\n' : '\n',
   indentUnit: '  ',
   standardDirectories: {},
   localizable: {
@@ -51,8 +52,8 @@ const config = {
     foldLine: 'Fold line',
     unfoldLine: 'Unfold line',
     previewButtonTitle: 'Preview',
-    cmdClickToFollow: 'Ctrl-click to follow',
-    cmdClickToToggleTodo: 'Ctrl-click to toggle task',
+    cmdClickToFollow: process.platform === 'darwin' ? 'Cmd-click to follow' : 'Ctrl-click to follow',
+    cmdClickToToggleTodo: process.platform === 'darwin' ? 'Cmd-click to toggle task' : 'Ctrl-click to toggle task',
   },
 };
 
@@ -65,7 +66,6 @@ html = html
     '<meta charset="UTF-8">',
     '<meta charset="UTF-8">\n  <meta http-equiv="Content-Security-Policy" content="default-src \'self\' data:; script-src \'self\' \'unsafe-inline\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data: https:; font-src \'self\' data:; connect-src \'none\'">',
   )
-  .replace('<title>MarkEdit</title>', '<title>MarkEdit for Windows</title>')
   .replace('</head>', '  <link rel="stylesheet" href="./reader.css">\n</head>')
   .replace('</body>', '  <script src="./reader.js"></script>\n</body>');
 

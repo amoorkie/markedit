@@ -1,5 +1,6 @@
 /node_modules/
 /dist/
+/dist-mac/
 /editor.html
 /reader.js
 /reader.css

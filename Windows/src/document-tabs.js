@@ -307,9 +307,11 @@ export function installDocumentTabs({ closeTextMenu }) {
     strip.scrollLeft += event.deltaY;
   }, { passive: false });
   document.addEventListener('keydown', event => {
-    if (!event.ctrlKey || event.altKey || editor.open || event.target.closest('input,textarea')) return;
-    if (event.key.toLowerCase() === 'w' && snapshot.activeId) { event.preventDefault(); void perform(() => window.windowsHost.closeTab(snapshot.activeId)); }
-    if (event.key === 'Tab' && snapshot.tabs.length) {
+    if (event.altKey || editor.open || event.target.closest('input,textarea')) return;
+    // Cmd+W закрывает вкладку на Mac; Control+Tab переключает вкладки на обеих системах.
+    const commandKey = window.windowsHost.platform === 'darwin' ? event.metaKey : event.ctrlKey;
+    if (commandKey && event.key.toLowerCase() === 'w' && snapshot.activeId) { event.preventDefault(); void perform(() => window.windowsHost.closeTab(snapshot.activeId)); }
+    if (event.ctrlKey && event.key === 'Tab' && snapshot.tabs.length) {
       event.preventDefault();
       const index = snapshot.tabs.findIndex(tab => tab.id === snapshot.activeId);
       const next = snapshot.tabs[(index + (event.shiftKey ? -1 : 1) + snapshot.tabs.length) % snapshot.tabs.length];
