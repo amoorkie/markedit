@@ -2,6 +2,7 @@ const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
+const { DocumentWorkspace } = require('./document-workspace.cjs');
 
 let mainWindow;
 let currentFile;
@@ -10,16 +11,30 @@ let recentFiles = [];
 const MAX_RECENT_FILES = 50;
 let dirty = false;
 let forceClose = false;
+let closingWindow = false;
 
 if (process.env.MARKEDIT_DEV_USER_DATA) {
   app.setPath('userData', process.env.MARKEDIT_DEV_USER_DATA);
 }
 
-const markdownFilters = [
-  { name: 'Markdown', extensions: ['md', 'markdown', 'mdown', 'mkd'] },
-  { name: 'Text', extensions: ['txt'] },
-  { name: 'All files', extensions: ['*'] },
-];
+// Один контроллер отвечает за документы; старые переменные служат проводнику и заголовку.
+const documents = new DocumentWorkspace({
+  getWindow: () => mainWindow,
+  dialog,
+  sessionPath: path.join(app.getPath('userData'), 'open-tabs.json'),
+  supportsPath: filePath => isSupportedFilePath(filePath),
+  onActive: tab => { currentFile = tab?.path || undefined; dirty = tab?.dirty === true; updateTitle(); },
+  onFile: async (filePath, { active = true } = {}) => { if (active) await setWorkspaceRoot(path.dirname(filePath)); await recordRecentFile(filePath); },
+});
+
+// Ошибки файловых операций показываются пользователю и не разрывают очередь вкладок.
+function documentAction(task) {
+  return documents.run(task).catch(error => {
+    dialog.showErrorBox('Не удалось выполнить действие', error.message);
+    return false;
+  });
+}
+
 const supportedExtensions = new Set(['.md', '.markdown', '.mdown', '.mkd', '.txt']);
 
 function fileFromArguments(argv) {
@@ -29,47 +44,17 @@ function fileFromArguments(argv) {
   });
 }
 
+// Имя и признак изменений всегда принадлежат активной вкладке.
 function updateTitle() {
   if (!mainWindow) return;
-  const name = currentFile ? path.basename(currentFile) : 'Untitled.md';
+  const name = documents.active?.name || (currentFile ? path.basename(currentFile) : 'Untitled.md');
   mainWindow.setTitle(`${dirty ? '* ' : ''}${name} - MarkEdit`);
   mainWindow.setDocumentEdited(dirty);
 }
 
-async function editorText() {
-  return mainWindow.webContents.executeJavaScript('window.webModules.core.getEditorText()');
-}
-
-async function resetEditor(text) {
-  const serialized = JSON.stringify(text);
-  await mainWindow.webContents.executeJavaScript(
-    `window.webModules.core.resetEditor({text:${serialized},documentChanged:true})`,
-  );
-  await mainWindow.webContents.executeJavaScript('window.markEditWindows?.documentChanged()');
-  dirty = false;
-  updateTitle();
-}
-
-async function confirmDiscard() {
-  if (!dirty) return true;
-  const result = dialog.showMessageBoxSync(mainWindow, {
-    type: 'warning',
-    buttons: ['Save', 'Discard', 'Cancel'],
-    defaultId: 0,
-    cancelId: 2,
-    title: 'MarkEdit',
-    message: `Save changes to ${currentFile ? path.basename(currentFile) : 'Untitled.md'}?`,
-    detail: 'Your changes will be lost if you do not save them.',
-  });
-  if (result === 2) return false;
-  if (result === 0) return saveDocument();
-  return true;
-}
-
 async function newDocument() {
-  if (!await confirmDiscard()) return;
-  currentFile = undefined;
-  await resetEditor('');
+  // Новый документ становится отдельной вкладкой, не заменяя текущий черновик.
+  return documentAction(() => documents.newDocument());
 }
 
 function workspaceStatePath() {
@@ -174,51 +159,13 @@ async function removeRecentFile(filePath) {
 }
 
 async function openDocument(filePath) {
-  if (!filePath) {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openFile'],
-      filters: markdownFilters,
-    });
-    if (result.canceled) return;
-    [filePath] = result.filePaths;
-  }
-
-  if (!await confirmDiscard()) return;
-  try {
-    const text = await fs.readFile(filePath, 'utf8');
-    currentFile = path.resolve(filePath);
-    await setWorkspaceRoot(path.dirname(currentFile));
-    await resetEditor(text);
-    await recordRecentFile(currentFile);
-  } catch (error) {
-    dialog.showErrorBox('Unable to open file', error.message);
-  }
+  // Все входы — проводник, системная ассоциация и меню — используют одну дедупликацию.
+  return documentAction(() => documents.open(filePath));
 }
 
 async function saveDocument(saveAs = false) {
-  let target = currentFile;
-  if (!target || saveAs) {
-    const result = await dialog.showSaveDialog(mainWindow, {
-      defaultPath: target || 'Untitled.md',
-      filters: markdownFilters,
-    });
-    if (result.canceled || !result.filePath) return false;
-    target = result.filePath;
-  }
-
-  try {
-    await fs.writeFile(target, await editorText(), 'utf8');
-    currentFile = path.resolve(target);
-    await setWorkspaceRoot(path.dirname(currentFile));
-    dirty = false;
-    await recordRecentFile(currentFile);
-    updateTitle();
-    await mainWindow.webContents.executeJavaScript('window.markEditWindows?.refreshWorkspace()');
-    return true;
-  } catch (error) {
-    dialog.showErrorBox('Unable to save file', error.message);
-    return false;
-  }
+  // Сохранение всегда относится к активному документу в очереди операций.
+  return documentAction(() => documents.save(documents.activeId, saveAs));
 }
 
 async function workspaceSnapshot() {
@@ -299,6 +246,10 @@ async function createWorkspaceFolder(name) {
 }
 
 async function deleteWorkspaceEntry(target) {
+  if (documents.containsPath(target)) {
+    dialog.showErrorBox('Нельзя удалить', 'Сначала закройте вкладки документов из этой папки.');
+    return false;
+  }
   if (!isInsideWorkspace(target)) throw new TypeError('Недопустимый путь');
   const resolvedTarget = path.resolve(target);
   if (currentFile) {
@@ -374,14 +325,7 @@ async function moveWorkspaceEntry(source, destinationDirectory, { allowRecent = 
       await fs.copyFile(resolvedSource, target);
       await fs.unlink(resolvedSource);
     }
-    if (currentFile) {
-      const currentKey = currentFile.toLowerCase();
-      if (currentKey === sourceKey || currentKey.startsWith(`${sourceKey}${path.sep}`)) {
-        currentFile = path.join(target, path.relative(resolvedSource, currentFile));
-        updateTitle();
-        await recordRecentFile(currentFile);
-      }
-    }
+    await documents.moved(resolvedSource, target);
     recentFiles = recentFiles.map(file => {
       const key = file.toLowerCase();
       return key === sourceKey || key.startsWith(`${sourceKey}${path.sep}`)
@@ -424,8 +368,6 @@ function workspaceNameForPath(target) {
 }
 
 async function createWorkspaceFile() {
-  if (!await confirmDiscard()) return false;
-
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Создать Markdown-файл',
     defaultPath: path.join(currentFile ? path.dirname(currentFile) : app.getPath('documents'), 'Новый документ.md'),
@@ -438,12 +380,9 @@ async function createWorkspaceFile() {
   if (!path.extname(target)) target += '.md';
 
   try {
-    await fs.writeFile(target, '', 'utf8');
-    currentFile = path.resolve(target);
-    await setWorkspaceRoot(path.dirname(currentFile));
-    await resetEditor('');
-    await recordRecentFile(currentFile);
-    return true;
+    // Создание не перезаписывает существующий файл, даже если открыт такой же документ.
+    await fs.writeFile(target, '', { encoding: 'utf8', flag: 'wx' });
+    return documents.open(path.resolve(target));
   } catch (error) {
     dialog.showErrorBox('Не удалось создать файл', error.message);
     return false;
@@ -530,7 +469,7 @@ function buildMenu() {
     {
       label: '&View',
       submenu: [
-        { role: 'reload' }, { type: 'separator' },
+        { type: 'separator' },
         { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'resetZoom' },
         { type: 'separator' }, { role: 'togglefullscreen' },
       ],
@@ -582,26 +521,40 @@ async function createWindow(initialFile) {
     }
   });
   mainWindow.on('close', async event => {
-    if (forceClose || !dirty) return;
+    if (forceClose) return;
     event.preventDefault();
-    if (await confirmDiscard()) {
+    if (closingWindow) return;
+    closingWindow = true;
+    // Проверяются все вкладки, включая изменённые документы в свёрнутых группах.
+    if (await documentAction(() => documents.confirmExit())) {
       forceClose = true;
       mainWindow.close();
     }
+    closingWindow = false;
   });
 
   await mainWindow.loadFile(path.join(__dirname, 'editor.html'));
+  // Восстановление редактора измеряет DOM: окно должно быть показано до ожидания кадра.
+  mainWindow.show();
+  await documents.run(() => documents.restore());
   if (initialFile) await openDocument(initialFile);
   else updateTitle();
-  mainWindow.show();
 }
 
-ipcMain.on('editor:dirty', () => {
-  if (!dirty) {
-    dirty = true;
-    updateTitle();
-  }
+ipcMain.on('editor:dirty', (event, id) => {
+  if (event.sender === mainWindow?.webContents) documents.markDirty(id);
 });
+
+// Узкие IPC-команды не дают интерфейсу напрямую менять файлы или структуру сессии.
+ipcMain.handle('tabs:snapshot', () => documents.snapshot());
+ipcMain.handle('tabs:activate', (_event, id) => documentAction(() => documents.activate(id)));
+ipcMain.handle('tabs:close', (_event, id) => documentAction(() => documents.close(id)));
+ipcMain.handle('tabs:new', (_event, groupId) => documentAction(() => documents.newDocument(groupId)));
+ipcMain.handle('tabs:open', (_event, groupId) => documentAction(() => documents.open(undefined, groupId)));
+ipcMain.handle('tabs:update', (_event, id, patch) => documentAction(() => documents.updateTab(id, patch)));
+ipcMain.handle('tabs:group-create', (_event, options) => documentAction(() => documents.createGroup(options)));
+ipcMain.handle('tabs:group-update', (_event, id, patch) => documentAction(() => documents.updateGroup(id, patch)));
+ipcMain.handle('tabs:ungroup', (_event, id) => documentAction(() => documents.ungroup(id)));
 
 ipcMain.handle('clipboard:write', (_event, text) => {
   if (typeof text !== 'string' || text.length > 10_000_000) {
@@ -618,9 +571,9 @@ ipcMain.handle('workspace:reveal-active', () => revealActiveFile());
 ipcMain.handle('workspace:select-root', () => selectWorkspaceRoot());
 ipcMain.handle('workspace:select-drive', (_event, drivePath) => selectWorkspaceDrive(drivePath));
 ipcMain.handle('workspace:create-folder', (_event, name) => createWorkspaceFolder(name));
-ipcMain.handle('workspace:delete-entry', (_event, target) => deleteWorkspaceEntry(target));
+ipcMain.handle('workspace:delete-entry', (_event, target) => documentAction(() => deleteWorkspaceEntry(target)));
 ipcMain.handle('workspace:move-entry', (_event, source, destination) => (
-  moveWorkspaceEntry(source, destination, { allowRecent: isRecentFile(source) })
+  documentAction(() => moveWorkspaceEntry(source, destination, { allowRecent: isRecentFile(source) }))
 ));
 ipcMain.on('workspace:start-file-drag', (event, source) => {
   if (!mainWindow || event.sender !== mainWindow.webContents || typeof source !== 'string' || !path.isAbsolute(source)) return;
@@ -639,10 +592,10 @@ ipcMain.on('workspace:start-file-drag', (event, source) => {
     if (!event.sender.isDestroyed()) event.sender.send('workspace:file-drag-ended');
   }
 });
-ipcMain.handle('workspace:choose-move-destination', (_event, source) => chooseMoveDestination(source));
+ipcMain.handle('workspace:choose-move-destination', (_event, source) => documentAction(() => chooseMoveDestination(source)));
 ipcMain.handle('workspace:remove-recent', (_event, filePath) => removeRecentFile(filePath));
 ipcMain.handle('workspace:children', (_event, directory) => readWorkspaceDirectory(directory));
-ipcMain.handle('workspace:create-file', () => createWorkspaceFile());
+ipcMain.handle('workspace:create-file', () => documentAction(() => createWorkspaceFile()));
 ipcMain.handle('workspace:open', async (_event, filePath) => {
   if (!isSupportedFilePath(filePath)) {
     throw new TypeError('Unsupported file path');

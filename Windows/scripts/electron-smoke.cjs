@@ -9,6 +9,9 @@ let revealActiveRequests = 0;
 let currentDocumentPath;
 const moveRequests = [];
 
+// Старые сценарии проверяют интерфейс чтения без открытых вкладок.
+ipcMain.handle('tabs:snapshot', () => ({ activeId: null, tabs: [], groups: [] }));
+
 ipcMain.handle('clipboard:write', (_event, text) => clipboard.writeText(text));
 ipcMain.handle('clipboard:read', async () => {
   await new Promise(resolve => setTimeout(resolve, 30));

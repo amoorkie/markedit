@@ -16,10 +16,11 @@ await build({
   target: 'chrome140',
   minify: true,
 });
-await fs.copyFile(
-  path.join(windowsDirectory, 'src', 'reader.css'),
-  path.join(windowsDirectory, 'reader.css'),
-);
+// Правила вкладок идут после базовых стилей, чтобы смещение элементов не переопределялось.
+await fs.writeFile(path.join(windowsDirectory, 'reader.css'), [
+  await fs.readFile(path.join(windowsDirectory, 'src', 'reader.css'), 'utf8'),
+  await fs.readFile(path.join(windowsDirectory, 'src', 'document-tabs.css'), 'utf8'),
+].join('\n'), 'utf8');
 
 const config = {
   host: 'mainApp',

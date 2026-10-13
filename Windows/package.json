@@ -1,6 +1,6 @@
 {
   "name": "markedit-windows",
-  "version": "1.33.1-win.21",
+  "version": "1.33.1-win.22",
   "description": "Unofficial Windows host for the MarkEdit CoreEditor",
   "main": "main.js",
   "author": "MarkEdit contributors",
@@ -10,6 +10,7 @@
     "test:windows": "node --test tests/*.test.mjs",
     "test:electron": "electron scripts/electron-smoke.cjs",
     "test:context-lifecycle": "electron scripts/text-context-lifecycle.cjs",
+    "test:tabs": "electron scripts/tabs-lifecycle.cjs && electron scripts/tabs-lifecycle.cjs --restore",
     "start": "electron .",
     "dist": "npm run prepare-editor && electron-builder --win nsis --x64"
   },
@@ -31,6 +32,7 @@
     },
     "files": [
       "main.js",
+      "document-workspace.cjs",
       "preload.js",
       "editor.html",
       "reader.js",

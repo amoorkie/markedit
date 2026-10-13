@@ -26,6 +26,7 @@ import {
 } from 'lucide';
 import { createSectionTree, sectionSource } from './section-model.mjs';
 import { installTextContextMenu } from './text-context-menu.js';
+import { installDocumentTabs } from './document-tabs.js';
 
 const STORAGE_KEY = 'markedit-windows-appearance-v1';
 const WORKSPACE_DRAG_TYPE = 'application/x-markedit-workspace-path';
@@ -74,6 +75,10 @@ const FONT_OPTIONS = [
 let settings = loadSettings();
 let mode = 'read';
 let closeTextContextMenu = () => {};
+let documentTabs;
+const documentStates = new Map();
+let displayedDocumentPath;
+let workspaceRefreshVersion = 0;
 let reader;
 let readerContent;
 let editButton;
@@ -523,8 +528,11 @@ async function setMode(nextMode) {
 }
 
 async function refreshWorkspace({ revealActive = false } = {}) {
+  // Поздний ответ проводника не должен перерисовать дерево предыдущего документа.
+  const version = ++workspaceRefreshVersion;
   if (!workspaceTree || !window.windowsHost?.getWorkspace) return;
   const snapshot = await window.windowsHost.getWorkspace();
+  if (version !== workspaceRefreshVersion) return;
   workspaceTitle.textContent = snapshot.rootName ?? workspaceName(snapshot.root);
   workspaceTitle.title = snapshot.root;
   const rootChanged = renderedWorkspaceRoot?.toLowerCase() !== snapshot.root.toLowerCase();
@@ -546,10 +554,14 @@ async function refreshWorkspace({ revealActive = false } = {}) {
   } else if (snapshot.entries.length === 0) {
     list.append(workspaceMessage('В папке нет Markdown-файлов', 0));
   } else {
-    for (const entry of snapshot.entries) list.append(await renderWorkspaceEntry(entry, snapshot.currentFile, 0));
+    for (const entry of snapshot.entries) {
+      if (version !== workspaceRefreshVersion) return;
+      list.append(await renderWorkspaceEntry(entry, snapshot.currentFile, 0, version));
+    }
     if (snapshot.truncated) list.append(workspaceMessage('Показаны первые 1000 элементов', 0));
   }
-  workspaceTree.append(list);
+  if (version !== workspaceRefreshVersion) return;
+  workspaceTree.replaceChildren(list);
   if (shouldRevealActive) {
     workspaceTree.querySelector('.workspace-row.selected')?.scrollIntoView({ block: 'center' });
   } else if (!rootChanged) {
@@ -800,7 +812,7 @@ function closeWorkspaceContextMenu() {
   if (menu) menu.hidden = true;
 }
 
-async function renderWorkspaceEntry(entry, currentFile, depth) {
+async function renderWorkspaceEntry(entry, currentFile, depth, version = workspaceRefreshVersion) {
   const item = document.createElement('li');
   const row = document.createElement('button');
   row.type = 'button';
@@ -836,7 +848,7 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
     const folderIcon = expanded ? 'folder-open' : 'folder';
     row.innerHTML = `${icon(expanded ? 'chevron-down' : 'chevron-right', 14)}${icon(folderIcon, 15)}<span>${escapeText(entry.name)}</span>`;
     row.title = entry.path;
-    createIcons({ icons: ICONS });
+    createIcons({ icons: ICONS, root: row });
   };
 
   const setExpanded = async nextExpanded => {
@@ -848,6 +860,7 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
     if (!expanded || loaded) return;
     row.classList.add('loading');
     const result = await window.windowsHost.getWorkspaceChildren(entry.path);
+    if (version !== workspaceRefreshVersion) return;
     children.replaceChildren();
     if (result.inaccessible) {
       children.append(workspaceMessage('Нет доступа к папке', depth + 1));
@@ -855,13 +868,15 @@ async function renderWorkspaceEntry(entry, currentFile, depth) {
       children.append(workspaceMessage('Папка пуста', depth + 1));
     } else {
       for (const child of result.entries) {
-        children.append(await renderWorkspaceEntry(child, currentFile, depth + 1));
+        // Прекращаем устаревшее построение, а не доделываем тысячу уже ненужных строк.
+        if (version !== workspaceRefreshVersion) return;
+        children.append(await renderWorkspaceEntry(child, currentFile, depth + 1, version));
       }
       if (result.truncated) children.append(workspaceMessage('Показаны первые 1000 элементов', depth + 1));
     }
     loaded = true;
     row.classList.remove('loading');
-    createIcons({ icons: ICONS });
+    createIcons({ icons: ICONS, root: children });
   };
 
   row.addEventListener('dragover', event => {
@@ -978,7 +993,7 @@ async function renderStartScreen() {
 async function refreshReader() {
   if (!readerContent || !window.webModules?.core) return;
   const currentFilePath = await window.windowsHost.getCurrentFilePath();
-  if (!currentFilePath) {
+  if (!currentFilePath && !document.documentElement.dataset.documentId) {
     readerContent.replaceChildren();
     readerContent.classList.add('reader-content-start');
     readerHeadingIndex = 0;
@@ -1123,9 +1138,55 @@ async function initialize() {
     },
   });
   applySettings();
+  documentTabs = installDocumentTabs({ closeTextMenu: () => closeTextContextMenu() });
   document.documentElement.classList.add('markedit-ready');
   await setMode('read');
   await refreshWorkspace();
+  await documentTabs.refresh();
+}
+
+// Состояние CodeMirror хранится в renderer: история отмены не сериализуется через IPC.
+function captureDocumentState() {
+  const id = document.documentElement.dataset.documentId;
+  if (!id) return null;
+  // Блокируем ввод на короткое время операции: текст после снимка не должен потеряться.
+  document.getElementById('editor').inert = true;
+  reader.inert = true;
+  documentStates.set(id, { state: window.editor.state, editorScroll: { top: window.editor.scrollDOM.scrollTop, left: window.editor.scrollDOM.scrollLeft }, readerScroll: { top: window.scrollY, left: window.scrollX } });
+  return { id, text: window.webModules.core.getEditorText(), mode };
+}
+
+// Новый view связывается с API редактора; сохранённое состояние возвращает выделение и undo.
+async function loadDocument(value) {
+  closeTextContextMenu();
+  documentTabs?.closeMenu();
+  const saved = value && documentStates.get(value.id);
+  if (value) document.documentElement.dataset.documentId = value.id;
+  else delete document.documentElement.dataset.documentId;
+  await window.webModules.core.resetEditor({ text: value?.text || '', documentChanged: true });
+  if (saved) window.editor.setState(saved.state);
+  applySettings();
+  await setMode(value?.mode || 'read');
+  // Разворачивание дерева диска выполняется в фоне и не блокирует переключение редактора.
+  if (displayedDocumentPath !== value?.path || workspaceRefreshVersion === 0) {
+    void refreshWorkspace().catch(error => console.error('Не удалось обновить проводник', error));
+  }
+  displayedDocumentPath = value?.path;
+  if (saved) {
+    window.editor.scrollDOM.scrollTo(saved.editorScroll);
+    window.scrollTo(saved.readerScroll);
+  } else window.scrollTo({ top: 0, left: 0 });
+}
+
+// Закрытие освобождает историю и содержимое только указанной вкладки.
+function forgetDocument(id) {
+  documentStates.delete(id);
+}
+
+// Разблокировка вызывается контроллером и при успешном переходе, и при отмене/ошибке.
+function finishDocumentOperation() {
+  document.getElementById('editor').inert = false;
+  reader.inert = false;
 }
 
 async function documentChanged() {
@@ -1133,6 +1194,6 @@ async function documentChanged() {
   await Promise.all([refreshReader(), refreshWorkspace()]);
 }
 
-window.markEditWindows = { documentChanged, refreshReader, refreshWorkspace };
+window.markEditWindows = { documentChanged, refreshReader, refreshWorkspace, captureDocumentState, loadDocument, forgetDocument, finishDocumentOperation };
 if (document.readyState === 'complete') initialize();
 else window.addEventListener('load', initialize, { once: true });
